@@ -1,0 +1,490 @@
+---
+title: "Vatia: Agrupación Según Perfiles de Consumo"
+author: "Andrés Camero"
+output: pdf_document
+---
+
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+rm(list = ls())
+options(error=traceback)
+library(clValid)
+library(NbClust)
+library(RMySQL)
+library(fpc)
+library(knitr)
+setwd("/home/andu/Documentos/uma/PHD/vatia/reports/clustering")
+set.seed(3)
+```
+
+``` {r echo=FALSE, warning=FALSE}
+mydb = dbConnect(MySQL(), user='root', password='q1w2e3r4', dbname='vatia_fdm', host='localhost')
+# Leemos la metadata
+rs_meta = dbSendQuery(mydb, "select * from vatia_fdm.vw_metadata")
+raw_metadata = fetch(rs_meta, n=-1)
+```
+
+Se han cargado `r nrow(raw_metadata)` edificios, de los cuales `r length(na.omit(raw_metadata$fk_weather_forecast_id))` tienen asociada información climatológica.
+
+``` {r echo=FALSE, warning=FALSE}
+# Leemos los datos del consumo
+rs = dbSendQuery(mydb, "select * from vatia_fdm.mvw_matrix_consumption")
+raw_data = fetch(rs, n=-1)
+
+# Extraemos las horas a las que se ha muestrado
+#hours <- unique(raw_consumption_data[,"date_hour"])
+dates <- unique(raw_data[,"consumption_date"])
+ids <- unique(raw_data[,"file_name"])
+perc <- 0.2
+
+# Seleccionamos los atributos numéricos
+matrix <- raw_data[,!colnames(raw_data) %in% c("file_name","consumption_date")]
+
+# Calculamos el número máximo de muestras en función del porcentaje previamente definido
+max_samp <- nrow(matrix)*perc
+```
+
+Se han cargado `r nrow(raw_data)` días de consumo para el total de edificios. El rango de fechas se extiende desde el día `r min(dates)` hasta el día `r max(dates)`. Nótese que se considera como registro un día (0:00 a 23:59 horas) de consumo.
+
+## Validación Interna
+Utilizando el `r perc*100`% de los registros se procede a calcular el número óptimo de agrupaciones (k-means clusters), utilizando las métricas de evaluación: Conectividad, Dunn y Silhouette. El proceso se repite 30 veces para asegurar su validez estadística. 
+
+``` {r echo=FALSE, warning=FALSE, eval=FALSE}
+# Para un subconjunto de los datos buscamos el número óptimo de clusters
+get_optimal_score <- function(max_samp, matrix) {
+  samp <- sample(nrow(matrix), max_samp)
+  internal_valid <- clValid(matrix[samp,], 2:10, clMethods=c("kmeans"), validation="internal", maxitems=max_samp)
+  optimal_scores <- optimalScores(internal_valid)
+  return(optimal_scores)
+}
+
+#par(mfrow=c(1,3))
+#plot(internal_valid)
+
+optimal_scores <- sapply( rep(max_samp,30), function(s) { get_optimal_score(s,matrix) })
+scores <- matrix(unlist(optimal_scores[1,]), ncol=3, byrow=TRUE)
+scores_means <- colMeans(scores)
+scores_means
+
+scores_sd <- sapply(1:ncol(scores), function(s) {sd(scores[,s])})
+scores_sd
+
+clusters <- matrix(as.numeric(as.vector(unlist(optimal_scores[3,]))), ncol=3, byrow=TRUE)
+clusters_means <- colMeans(clusters)
+clusters_means
+
+clusters_sd <- sapply(1:ncol(clusters), function(s) {sd(clusters[,s])})
+clusters_sd
+```
+
+A continuación se presentan los valores medios para los tres índices de calidad:
+
+| Métrica | Valor índice medio | Desviación estándar |
+| ---   | :---: | :---: |
+| Conectividad | 108.37248677 | 11.538689218 |
+| Dunn | 0.01358935   | 0.003286557 |
+| Silhouette |0.73029050 | 0.003251028 |
+
+Los valores medios para la cantidad óptima de conjuntos se muestra a continuación:
+
+| Métrica | Clusters óptimos medio | Desviación estándar |
+| ---   | :---: | :---: |
+| Conectividad | 2.000000 | 0 |
+| Dunn | 2.666667 | 1.397864 |
+| Silhouette |2.000000 | 0 |
+
+De los resultados podemos inferir que los clusters se presentaran de manera *compacta*, es decir no existirá una gran diferenciación entre los mismos.
+
+``` {r echo=FALSE, warning=FALSE}
+# Ahora para el número óptimo de clusters generamos los clusters
+# num_clusters <- as.integer(as.matrix(optimal_scores['Dunn','Clusters']))
+# Lo dejamos fijo en 3 para no tener que ejecutar el bloque anterior
+num_clusters <- 3
+# Agrupamos los datos en "num_clusters" (en este caso 2) grupos
+kc <- kmeans(matrix, num_clusters, 30, 10)
+```
+
+Utilizando como referencia la agrupación óptima referida por el índice Dunn (es decir `r num_clusters` clusters), se procede a graficar las agruapaciones para tres horas arbitrarias.
+
+``` {r echo=FALSE, warning=FALSE}
+# Graficamos los clusters para algunas horas
+colors <- rainbow(num_clusters)
+vals <- c(32,64,96)
+pairs(rbind(matrix[,vals],kc$centers[,vals]),col=c(colors[kc$cluster],rainbow(num_clusters)), pch=c(rep(1,nrow(matrix[,vals])),rep(15,num_clusters)))
+
+```
+
+Las gráficas confirman la apreciación previa sobre las agrupaciones *compactas*.
+
+A continuación se muestran los perfiles *promedio* para cada agrupación.
+
+``` {r echo=FALSE, warning=FALSE, results='hide'}
+# Graficamos los centroides de cada cluster, para obtener una idea más clara del perfil de cada día
+npos <- ncol(matrix) / 24
+pos <- seq(1,ncol(matrix),by=npos*4)
+pos <- c(pos,ncol(matrix))
+
+par(mfrow=c(1,1))
+plot(1:ncol(matrix),kc$centers[1,], type="l", xlab="Hora", ylab="Consumo", xaxt="n", main="Clusters", ylim=c(min(kc$centers),max(kc$centers)), log="y", col=colors[1])
+axis(1, at=pos, labels=FALSE)
+# text(x=pos,par("usr")[3] + 0.9,labels=colnames(matrix)[pos], srt = 45, pos = 1, xpd = TRUE)
+text(x=pos,9,labels=colnames(matrix)[pos], srt = 45, pos = 1, xpd = TRUE)
+
+lapply(2:num_clusters, function(s) {
+  lines(1:ncol(matrix),kc$centers[s,], type="l", col=colors[s])
+  } )
+legend(x=1,y=70,legend=1:num_clusters, col=colors,xpd=TRUE, lwd=1)
+```
+
+Donde cada agrupación integra las siguientes observaciones:
+
+`r kable(as.data.frame(table(kc$cluster)))`
+
+Nótese que cada perfil corresponde a consumos bajo, medio y alto.
+
+## Calinski-Harabasz
+
+Para el conjunto de datos se realiza la búsqueda del número óptimo utilizando el criterio Calinski-Harabasz.
+
+``` {r echo=FALSE, warning=FALSE}
+zc <- kmeansruns(matrix)
+# zc$bestk es igual a 3
+```
+
+El número óptimo de agrupaciones (k-means clusters) según este criterio es `r zc$bestk`.
+
+A continuación se muestran los valores obtenidos para el criterio referido para los diferentes tamaños de agrupaciones. Luego se presentan los datos agrupados.
+
+``` {r echo=FALSE, warning=FALSE}
+par(mfrow=c(1,1))
+plot(zc$crit)
+plotcluster(matrix,zc$cluster)
+```
+
+Nuevamente podemos constatar que las agrupaciones son compactas.
+
+## Reagrupación del Cluster de Mayor Tamaño
+
+Dado que la un cluster concentra la mayoría de las observaciones (`r max(kc$size)/nrow(matrix)*100`%), procedemos a revisar los efectos de una reagrupación interna, es decir de los elementos del cluster.
+
+``` {r echo=FALSE, warning=FALSE}
+tl <- 1:length(kc$size)
+cmax <- tl[kc$size == max(kc$size)]
+matrix_1 <- matrix[kc$cluster == cmax,]
+max_samp_1 <- nrow(matrix_1)*perc
+```
+
+``` {r echo=FALSE, warning=FALSE, eval=FALSE}
+optimal_scores_1 <- sapply( rep(max_samp_1,30), function(s) { get_optimal_score(s,matrix_1) } )
+
+scores_1 <- matrix(unlist(optimal_scores_1[1,]), ncol=3, byrow=TRUE)
+scores_means_1 <- colMeans(scores_1)
+scores_means_1
+
+scores_sd_1 <- sapply(1:ncol(scores_1), function(s) {sd(scores_1[,s])})
+scores_sd_1
+
+clusters_1 <- matrix(as.numeric(as.vector(unlist(optimal_scores_1[3,]))), ncol=3, byrow=TRUE)
+clusters_means_1 <- colMeans(clusters_1)
+clusters_means_1
+
+clusters_sd_1 <- sapply(1:ncol(clusters_1), function(s) {sd(clusters_1[,s])})
+clusters_sd_1
+```
+
+A continuación se presentan los valores medios para los tres índices de calidad:
+
+| Métrica | Valor índice medio | Desviación estándar |
+| ---   | :---: | :---: |
+| Conectividad | 108.19805556 | 11.232632714 |
+| Dunn | 0.01937224   | 0.003528285  |
+| Silhouette | 0.63681941 | 0.006664091 |
+
+Los valores medios para la cantidad óptima de conjuntos se muestra a continuación:
+
+| Métrica | Clusters óptimos medio | Desviación estándar |
+| ---   | :---: | :---: |
+| Conectividad | 2.0 | 0 |
+| Dunn | 3.4 | 1.897367 |
+| Silhouette |2.0 | 0 |
+
+A continuación se muestran los perfiles de consumo tipo (centroides).
+
+``` {r echo=FALSE, warning=FALSE, results='hide'}
+# Lo dejamos fijo en 3 para no tener que ejecutar el bloque anterior
+num_clusters_1 <- 3
+# Agrupamos los datos en "num_clusters" grupos
+kc_1 <- kmeans(matrix_1, num_clusters_1, 30, 10)
+
+colors_1 <- rainbow(num_clusters_1)
+
+par(mfrow=c(1,1))
+plot(1:ncol(matrix_1),kc_1$centers[1,], type="l", xlab="Hora", ylab="Consumo", xaxt="n", main="Sub Clusters", ylim=c(min(kc_1$centers),max(kc_1$centers)), log="y", col=colors_1[1])
+axis(1, at=pos, labels=FALSE)
+text(x=pos,min(kc_1$centers)-1,labels=colnames(matrix_1)[pos], srt = 45, pos = 1, xpd = TRUE)
+
+lapply(2:num_clusters_1, function(s) {
+  lines(1:ncol(matrix_1),kc_1$centers[s,], type="l", col=colors_1[s])
+  } )
+legend(x=1,y=20,legend=1:num_clusters_1, col=colors_1,xpd=TRUE, lwd=1)
+```
+
+La siguiente tabla muestra la cantidad de observaciones por cluster.
+
+`r kable(as.data.frame(table(kc_1$cluster)))`
+
+Ahora probamos dividir el conjunto inicial (todas las observaciones) en `r num_clusters+num_clusters_1`.
+
+``` {r echo=FALSE, warning=FALSE, results='hide'}
+# Lo dejamos fijo en 3 para no tener que ejecutar el bloque anterior
+num_clusters_t <- num_clusters+num_clusters_1
+# Agrupamos los datos en "num_clusters" grupos
+kc_t <- kmeans(matrix, num_clusters_t, 30, 10)
+
+colors_t <- rainbow(num_clusters_t)
+
+par(mfrow=c(1,1))
+plot(1:ncol(matrix),kc_t$centers[1,], type="l", xlab="Hora", ylab="Consumo", xaxt="n", main="Clusters Agregados", ylim=c(min(kc_t$centers),max(kc_t$centers)), log="y", col=colors_t[1])
+axis(1, at=pos, labels=FALSE)
+text(x=pos,min(kc_t$centers)-2,labels=colnames(matrix_1)[pos], srt = 45, pos = 1, xpd = TRUE)
+
+lapply(2:num_clusters_t, function(s) {
+  lines(1:ncol(matrix),kc_t$centers[s,], type="l", col=colors_t[s])
+  } )
+legend(x=1,y=200,legend=1:num_clusters_t, col=colors_t,xpd=TRUE, lwd=1)
+```
+
+La siguiente tabla muestra la cantidad de observaciones por cluster.
+
+`r kable(as.data.frame(table(kc_t$cluster)))`
+
+Vemos que los perfiles de consumo son diferentes a los obtenidos anteriormente (en términos de consumo, no de forma). Asimismo hay un cluster que concentra la mayoría de las observaciones, y resulta coincidente con el perfil de menor consumo.
+
+
+## Análisis de Correlación con Variables Climatológicas
+
+``` {r echo=FALSE, warning=FALSE}
+calc_corr <- function(s, clima) {
+  t <- matrix[s,]
+  fk <- raw_metadata[raw_metadata$file_name==raw_data[s,"file_name"],"fk_weather_forecast_id"]
+  dt <- raw_data[s,"consumption_date"]
+  temp <- clima[which(clima$forecast_date==dt & clima$fk_weather_station_id==fk ), !colnames(clima) %in% c("forecast_date","fk_weather_station_id")]
+  corr <- cor(as.numeric(t),as.numeric(temp), use="pairwise.complete.obs")
+  return(corr)
+}
+
+# Temperature
+rs_temperature = dbSendQuery(mydb, "select * from vatia_fdm.vw_matrix_weather_temperature")
+raw_temperature = fetch(rs_temperature, n=-1)
+raw_temperature[raw_temperature==-99999] <- NA
+
+corrs_t <- sapply(1:nrow(matrix) , function(s) { calc_corr(s, raw_temperature)}) 
+corrs_t_mean <- mean(na.omit(corrs_t))
+#corrs_t[corrs_t==NA] <- -100
+
+hpc_t <- as.vector(table(kc$cluster[which(corrs_t >= 0.41)]))
+mpc_t <- as.vector(table(kc$cluster[which(corrs_t < 0.41 & corrs_t >= 0.26)]))
+spc_t <- as.vector(table(kc$cluster[which(corrs_t >= 0.1 & corrs_t < 0.26)]))
+noc_t <- as.vector(table(kc$cluster[which(corrs_t < 0.1 & corrs_t >= -0.1)]))
+hnc_t <- as.vector(table(kc$cluster[which(corrs_t < -0.41 & corrs_t >= -2)]))
+mnc_t <- as.vector(table(kc$cluster[which(corrs_t >= -0.41 & corrs_t < -0.26)]))
+snc_t <- as.vector(table(kc$cluster[which(corrs_t < -0.1 & corrs_t >= -0.26)]))
+
+corrs_t_clus <- rbind(hpc_t,mpc_t,spc_t,noc_t,snc_t,mnc_t,hnc_t)
+colnames(corrs_t_clus) <- c("1","2","3")
+rownames(corrs_t_clus) <- c("Strong Linear Positive Correlation","Medium Linear Positive  Correlation", "Small Linear Positive Correlation", "No Correlation", "Small Linear Negative  Correlation", "Medium Linear Negative Correlation", "Strong Linear Negative Correlation")
+
+# Precipitation
+rs_precipitation = dbSendQuery(mydb, "select * from vatia_fdm.vw_matrix_weather_precipitation")
+raw_precipitation = fetch(rs_precipitation, n=-1)
+raw_precipitation[raw_precipitation==-99999] <- NA
+corrs_p <- sapply(1:nrow(matrix) , function(s) { calc_corr(s, raw_precipitation)}) 
+corrs_p_mean <- mean(na.omit(corrs_p))
+#corrs_t[corrs_t==NA] <- -100
+
+hpc_p <- as.vector(table(kc$cluster[which(corrs_p >= 0.41)]))
+mpc_p <- as.vector(table(kc$cluster[which(corrs_p < 0.41 & corrs_p >= 0.26)]))
+spc_p <- as.vector(table(kc$cluster[which(corrs_p >= 0.1 & corrs_p < 0.26)]))
+noc_p <- as.vector(table(kc$cluster[which(corrs_p < 0.1 & corrs_p >= -0.1)]))
+hnc_p <- as.vector(table(kc$cluster[which(corrs_p < -0.41 & corrs_p >= -2)]))
+mnc_p <- as.vector(table(kc$cluster[which(corrs_p >= -0.41 & corrs_p < -0.26)]))
+snc_p <- as.vector(table(kc$cluster[which(corrs_p < -0.1 & corrs_p >= -0.26)]))
+
+corrs_p_clus <- rbind(hpc_p,mpc_p,spc_p,noc_p,snc_p,mnc_p,hnc_p)
+colnames(corrs_p_clus) <- c("1","2","3")
+rownames(corrs_p_clus) <- c("Strong Linear Positive Correlation","Medium Linear Positive  Correlation", "Small Linear Positive Correlation", "No Correlation", "Small Linear Negative  Correlation", "Medium Linear Negative Correlation", "Strong Linear Negative Correlation")
+
+# Wind
+rs_wind = dbSendQuery(mydb, "select * from vatia_fdm.vw_matrix_weather_wind")
+raw_wind = fetch(rs_wind, n=-1)
+raw_wind[raw_wind==-99999] <- NA
+corrs_w <- sapply(1:nrow(matrix) , function(s) { calc_corr(s, raw_wind)}) 
+corrs_w_mean <- mean(na.omit(corrs_w))
+#corrs_t[corrs_t==NA] <- -100
+
+hpc_w <- as.vector(table(kc$cluster[which(corrs_w >= 0.41)]))
+mpc_w <- as.vector(table(kc$cluster[which(corrs_w < 0.41 & corrs_w >= 0.26)]))
+spc_w <- as.vector(table(kc$cluster[which(corrs_w >= 0.1 & corrs_w < 0.26)]))
+noc_w <- as.vector(table(kc$cluster[which(corrs_w < 0.1 & corrs_w >= -0.1)]))
+hnc_w <- as.vector(table(kc$cluster[which(corrs_w < -0.41 & corrs_w >= -2)]))
+mnc_w <- as.vector(table(kc$cluster[which(corrs_w >= -0.41 & corrs_w < -0.26)]))
+snc_w <- as.vector(table(kc$cluster[which(corrs_w < -0.1 & corrs_w >= -0.26)]))
+
+corrs_w_clus <- rbind(hpc_w,mpc_w,spc_w,noc_w,snc_w,mnc_w,hnc_w)
+colnames(corrs_w_clus) <- c("1","2","3")
+rownames(corrs_w_clus) <- c("Strong Linear Positive Correlation","Medium Linear Positive  Correlation", "Small Linear Positive Correlation", "No Correlation", "Small Linear Negative  Correlation", "Medium Linear Negative Correlation", "Strong Linear Negative Correlation")
+
+# Pressure
+rs_pressure = dbSendQuery(mydb, "select * from vatia_fdm.vw_matrix_weather_pressure")
+raw_pressure = fetch(rs_pressure, n=-1)
+raw_pressure[raw_pressure==-99999] <- NA
+corrs_h <- sapply(1:nrow(matrix) , function(s) { calc_corr(s, raw_pressure)}) 
+corrs_h_mean <- mean(na.omit(corrs_h))
+#corrs_t[corrs_t==NA] <- -100
+
+hpc_h <- as.vector(table(kc$cluster[which(corrs_h >= 0.41)]))
+mpc_h <- as.vector(table(kc$cluster[which(corrs_h < 0.41 & corrs_h >= 0.26)]))
+spc_h <- as.vector(table(kc$cluster[which(corrs_h >= 0.1 & corrs_h < 0.26)]))
+noc_h <- as.vector(table(kc$cluster[which(corrs_h < 0.1 & corrs_h >= -0.1)]))
+hnc_h <- as.vector(table(kc$cluster[which(corrs_h < -0.41 & corrs_h >= -2)]))
+mnc_h <- as.vector(table(kc$cluster[which(corrs_h >= -0.41 & corrs_h < -0.26)]))
+snc_h <- as.vector(table(kc$cluster[which(corrs_h < -0.1 & corrs_h >= -0.26)]))
+
+corrs_h_clus <- rbind(hpc_h,mpc_h,spc_h,noc_h,snc_h,mnc_h,hnc_h)
+colnames(corrs_h_clus) <- c("1","2","3")
+rownames(corrs_h_clus) <- c("Strong Linear Positive Correlation","Medium Linear Positive  Correlation", "Small Linear Positive Correlation", "No Correlation", "Small Linear Negative  Correlation", "Medium Linear Negative Correlation", "Strong Linear Negative Correlation")
+```
+
+A continuación se muestran los valores medios de la correlación entre las diferentes variables climatológicas y las observaciones de consumo.
+
+| Variable Climatológica | Correlación Media |
+| --- | :---: |
+| Temperatura | `r corrs_t_mean` |
+| Precipitaciones | `r corrs_p_mean` |
+| Intensidad de Viento | `r corrs_w_mean` |
+| Presión Atmosférica | `r corrs_h_mean` |
+
+Las siguientes tablas muestran la cantidad de observaciones por grupo, según su nivel de correlación con las diferentes variables climatológicas.
+
+### Temperatura
+`r kable(corrs_t_clus)`
+
+### Precipitaciones
+`r kable(corrs_p_clus)`
+
+### Intensidad de Vient
+`r kable(corrs_w_clus)`
+
+### Presión Atmosférica
+`r kable(corrs_h_clus)`
+
+
+## Caracterización de un Edificio
+
+``` {r echo=FALSE, warning=FALSE}
+
+monthly_day_cluster <- function (fn, ym) {
+  temp <- as.data.frame(t(c(fn, ym, kc$cluster[ which(raw_data$file_name == fn & substr(raw_data$consumption_date, 1,7) == ym) ] )))
+  if(ncol(temp)<30) { return( data.frame() )}
+  if( ncol(temp) < 33 ) { 
+    pad <- rep(0, 33-ncol(temp))
+    temp <- as.data.frame(c(temp, pad )) }
+  colnames(temp) <- c("file_name", "ym", 1:31)
+  return(temp)
+}
+
+yms <- unique(substr(raw_data$consumption_date, 1,7))
+monthly_cluster <- data.frame(stringsAsFactors=FALSE)
+for( fn in unique(raw_data$file_name) ) {
+  for(ym in yms) { 
+    monthly_cluster <- rbind( monthly_cluster, monthly_day_cluster(fn,ym), stringsAsFactors=FALSE )
+  }
+} 
+
+monthly_matrix <- monthly_cluster[,!colnames(monthly_cluster) %in% c("file_name","ym")]
+monthly_matrix[is.na(monthly_matrix[,])] <- 0
+
+internal_valid_monthly <- clValid(monthly_matrix, 2:10, clMethods=c("kmeans"), validation="internal")
+optimal_scores_monthly <- optimalScores(internal_valid_monthly)
+```
+
+``` {r echo=FALSE, warning=FALSE}
+# 1. Desagregación de consumo en particular en relación a variables meteorológicas
+year_corr_building <- function(fn,year) {
+  temp <- data.frame()
+  a_pressure <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year) , function(s) { calc_corr(s, raw_pressure)}) ))
+  a_wind <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year) , function(s) { calc_corr(s, raw_wind)}) ))
+  a_temperature <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year) , function(s) { calc_corr(s, raw_temperature)}) ))
+  a_precipitation <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year) , function(s) { calc_corr(s, raw_precipitation)}) ))
+  
+  pressure_1t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="01" | substr(raw_data$consumption_date,6,7)=="02" | substr(raw_data$consumption_date,6,7)=="03")) , function(s) { calc_corr(s, raw_pressure)}) ))
+  pressure_2t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="04" | substr(raw_data$consumption_date,6,7)=="05" | substr(raw_data$consumption_date,6,7)=="06")) , function(s) { calc_corr(s, raw_pressure)}) ))
+  pressure_3t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="07" | substr(raw_data$consumption_date,6,7)=="08" | substr(raw_data$consumption_date,6,7)=="09")) , function(s) { calc_corr(s, raw_pressure)}) ))
+  pressure_4t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="10" | substr(raw_data$consumption_date,6,7)=="11" | substr(raw_data$consumption_date,6,7)=="12")) , function(s) { calc_corr(s, raw_pressure)}) ))
+  
+  temperature_1t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="01" | substr(raw_data$consumption_date,6,7)=="02" | substr(raw_data$consumption_date,6,7)=="03")) , function(s) { calc_corr(s, raw_temperature)}) ))
+  temperature_2t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="04" | substr(raw_data$consumption_date,6,7)=="05" | substr(raw_data$consumption_date,6,7)=="06")) , function(s) { calc_corr(s, raw_temperature)}) ))
+  temperature_3t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="07" | substr(raw_data$consumption_date,6,7)=="08" | substr(raw_data$consumption_date,6,7)=="09")) , function(s) { calc_corr(s, raw_temperature)}) ))
+  temperature_4t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="10" | substr(raw_data$consumption_date,6,7)=="11" | substr(raw_data$consumption_date,6,7)=="12")) , function(s) { calc_corr(s, raw_temperature)}) ))
+  
+  precipitation_1t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="01" | substr(raw_data$consumption_date,6,7)=="02" | substr(raw_data$consumption_date,6,7)=="03")) , function(s) { calc_corr(s, raw_precipitation)}) ))
+  precipitation_2t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="04" | substr(raw_data$consumption_date,6,7)=="05" | substr(raw_data$consumption_date,6,7)=="06")) , function(s) { calc_corr(s, raw_precipitation)}) ))
+  precipitation_3t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="07" | substr(raw_data$consumption_date,6,7)=="08" | substr(raw_data$consumption_date,6,7)=="09")) , function(s) { calc_corr(s, raw_precipitation)}) ))
+  precipitation_4t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="10" | substr(raw_data$consumption_date,6,7)=="11" | substr(raw_data$consumption_date,6,7)=="12")) , function(s) { calc_corr(s, raw_precipitation)}) ))
+  
+  wind_1t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="01" | substr(raw_data$consumption_date,6,7)=="02" | substr(raw_data$consumption_date,6,7)=="03")) , function(s) { calc_corr(s, raw_wind)}) ))
+  wind_2t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="04" | substr(raw_data$consumption_date,6,7)=="05" | substr(raw_data$consumption_date,6,7)=="06")) , function(s) { calc_corr(s, raw_wind)}) ))
+  wind_3t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="07" | substr(raw_data$consumption_date,6,7)=="08" | substr(raw_data$consumption_date,6,7)=="09")) , function(s) { calc_corr(s, raw_wind)}) ))
+  wind_4t <- mean( na.omit( sapply(which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,4)==year & (substr(raw_data$consumption_date,6,7)=="10" | substr(raw_data$consumption_date,6,7)=="11" | substr(raw_data$consumption_date,6,7)=="12")) , function(s) { calc_corr(s, raw_wind)}) ))
+  
+  out <- data.frame( c(temperature_1t, temperature_2t, temperature_3t, temperature_4t, a_temperature), c(precipitation_1t, precipitation_2t, precipitation_3t, precipitation_4t, a_precipitation), c(wind_1t, wind_2t, wind_3t, wind_4t, a_wind), c(pressure_1t, pressure_2t, pressure_3t, pressure_4t, a_pressure))
+  out <- t(out)
+  colnames(out) <- c("1T", "2T", "3T", "4T", "Anual")
+  rownames(out) <- c("Temperatura", "Precipitaciones", "Viento", "Presión")
+  return(out)
+}
+
+# Un edificio
+res <- year_corr_building("56c2f7c2a1f84c08ff98f6be","2015")
+
+# Todos los edificios de málaga
+res_malaga <- sapply( raw_metadata[which(raw_metadata$fk_weather_forecast_id==6), "file_name"], function(fn) {
+  year_corr_building(fn,"2015")  
+})
+res_malaga_agg <- matrix( sapply( 1:nrow(res_malaga), function(s) {mean(na.omit(res_malaga[s,])) } ) , ncol=5, byrow=TRUE)
+```
+
+
+``` {r echo=FALSE, warning=FALSE}
+# 3. Predicción de consumos (Línea Base)
+
+base <- matrix[which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,7) == "2016-01"),]
+agg_base <- t(sapply(1:nrow(base), function(s) { sum(base[s,])}))
+colnames(agg_base) <- raw_data[which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,7) == "2016-01"), "consumption_date"]
+t(agg_base)
+
+max_base <- t(sapply(1:nrow(base), function(s) { max(base[s,])}))
+colnames(max_base) <- raw_data[which(raw_data$file_name == fn & substr(raw_data$consumption_date,1,7) == "2016-01"), "consumption_date"]
+t(max_base)
+```
+
+``` {r echo=FALSE, warning=FALSE}
+# 4. Agrupación
+num_clusters_e <- 3
+matrix_e <- matrix[which(raw_data$file_name == fn),]
+kc_e <- kmeans(matrix_e, num_clusters_e, 30, 10)
+colors_e <- rainbow(num_clusters_e)
+
+par(mfrow=c(1,1))
+plot(1:ncol(matrix_e),kc_e$centers[1,], type="l", xlab="Hora", ylab="Consumo", xaxt="n", main="Sub Clusters", ylim=c(min(kc_e$centers),max(kc_e$centers)), log="y", col=colors_e[1])
+axis(1, at=pos, labels=FALSE)
+text(x=pos,min(kc_e$centers)-1,labels=colnames(matrix_e)[pos], srt = 45, pos = 1, xpd = TRUE)
+
+lapply(2:num_clusters_e, function(s) {
+  lines(1:ncol(matrix_e),kc_e$centers[s,], type="l", col=colors_e[s])
+  } )
+legend(x=1,y=70,legend=1:num_clusters_e, col=colors_e,xpd=TRUE, lwd=1)
+
+t(rbind( raw_data[which(raw_data$file_name == fn),"consumption_date"] , kc_e$cluster))
+
+as.data.frame( t( rbind( raw_data[which(raw_data$file_name == fn),"consumption_date"] , corrs_t[which(raw_data$file_name == fn)] , corrs_p[which(raw_data$file_name == fn)],  corrs_w[which(raw_data$file_name == fn)] , corrs_h[which(raw_data$file_name == fn)])) )
+```

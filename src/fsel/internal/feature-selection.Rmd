@@ -1,0 +1,264 @@
+---
+title: "Feature Selection Internal"
+author: "Andrés Camero"
+output: pdf_document
+---
+
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+rm(list = ls())
+options(error=traceback)
+#library(clValid)
+#library(NbClust)
+library(RMySQL)
+#library(fpc)
+#library(knitr)
+library(clusterCrit)
+setwd("/home/andu/Documentos/uma/PHD/papers/vatia")
+set.seed(1)
+```
+
+
+
+## Obtención de datos
+``` {r echo=FALSE, warning=FALSE}
+# Conección a la BD
+mydb = dbConnect(MySQL(), user='root', password='q1w2e3r4', dbname='vatia_fdm', host='localhost')
+# Leemos la metadata
+rs_meta = dbSendQuery(mydb, "select * from vatia_fdm.vw_metadata")
+raw_metadata = fetch(rs_meta, n=-1)
+# Leemos los datos del consumo
+rs = dbSendQuery(mydb, "select * from vatia_fdm.mvw_matrix_consumption")
+raw_data = fetch(rs, n=-1)
+matrix <- raw_data[,!colnames(raw_data) %in% c("file_name","consumption_date")]
+```
+
+
+## Generación de clusters "ground truth"
+``` {r echo=FALSE, warning=FALSE}
+# Parámetro utilizado a lo largo de todo el problema. 
+# Los consumos diarios de cada edificio son agrupados en "num_clusters" k-means clusters
+num_clusters <- 3
+
+# Dado un conjunto de variables y observaciones, se realiza la agrupación (k-means) de 
+# las observaciones
+get_clusters <- function( consumption ) {
+  temp_clusters <- lapply(1:nrow(raw_metadata), function(s) {
+    temp <- consumption[which(raw_data$file_name == raw_metadata$file_name[s]),]
+    kc <- kmeans(temp, num_clusters, 30, 10)
+    kc$cluster
+  })
+  return(temp_clusters)
+}
+
+get_clusters_measures <- function( consumption ) {
+  temp_clusters <- lapply(1:nrow(raw_metadata), function(s) {
+    temp <- consumption[which(raw_data$file_name == raw_metadata$file_name[s]),]
+    kc <- kmeans(temp, num_clusters, 30, 10)
+    c(kc$withinss,kc$betweenss)
+  })
+  return(temp_clusters)
+}
+
+get_clusters_xie_beni <- function( consumption ) {
+  temp_clusters <- lapply(1:nrow(raw_metadata), function(s) {
+    temp <- consumption[which(raw_data$file_name == raw_metadata$file_name[s]),]
+    kc <- kmeans(temp, num_clusters, 30, 10)
+    as.numeric(intCriteria(as.matrix(temp), kc$cluster, "Xie_Beni"))
+  })
+  return(temp_clusters)
+}
+
+set.seed(1)
+# Consideramos que la "verdad" se obtiene al realizar la agrupación utilizando todas las variables
+ground_clusters_measures <- get_clusters_xie_beni( matrix )
+
+
+```
+
+
+
+## Definición del GA
+``` {r echo=FALSE, warning=FALSE}
+# Función para inicializar la población con valores aleatorios uniformemente distribuidos
+init_pop <- function( pop_size, num_genes ){
+  t( sapply(1:pop_size, function(s) { as.logical(round(runif(num_genes))) } ) )
+}
+
+# Selección de un individuo por torneo binario
+binary_tournament <- function( population, fitness ) {
+  pos <- sample(nrow(population), 2)
+  if( fitness[pos[1]] < fitness[pos[2]] ) {
+    return(population[pos[1],])
+  } else {
+    return(population[pos[2],])
+  }
+}
+
+# Cruce de dos individuos en un solo punto
+spx <- function( probability, ind1, ind2 ) {
+  if( probability < runif(1)) {
+    if( 0.5 < runif(1) ) {
+      return(ind1)
+    } else {
+      return(ind2)
+    }
+  } 
+  pos <- sample( (length(ind1)-1) , 1)
+  return( c(ind1[1:pos], ind2[(pos+1):length(ind1)]) )
+}
+
+# Mutación de un individuo
+mutation <- function( probability, individual ) {
+  probs <- runif(length(individual))
+  individual[ which(probs<probability) ] <- !( individual[ which(probs<probability) ] )
+  return(individual)
+}
+
+# Generación del offspring
+get_offspring <- function( pop_in, fitness, offspring_size ) {
+  pop_out <- c()
+  for( index in 1:offspring_size ) {
+    temp <- spx(prob_crossover, binary_tournament(pop_in, fitness), binary_tournament(pop_in, fitness))
+    temp <- mutation(prob_mutation, temp)
+    pop_out <- rbind( pop_out, temp)
+  }
+  return(pop_out)
+}
+
+# Para un individuo se realiza la evaluación de la agrupación obtenida con las variables
+# seleccionadas por éste. Se mide la cantidad de observaciones erróneas.
+evaluate_consumption <- function( individual, consumption ) {
+  clusters_measures <- get_clusters_xie_beni( consumption )
+  fitness <- sapply(1:length(clusters_measures), function(s) {
+    sum(abs(clusters_measures[[s]] - ground_clusters_measures[[s]]))
+  })
+  return(sum(fitness))
+}
+
+# Evaluación de un individuo
+evaluate_individual <- function( individual, matrix ) {
+  return(evaluate_consumption(individual, matrix[,individual]))
+}
+
+# Función de reemplazo de la población
+replace_population <- function( pop, offspring, fitness_pop, fitness_offspring) {
+  if(nrow(offspring)==1){
+    new_pop <- rbind( pop[-which(fitness_pop==max(fitness_pop))[1],], offspring)
+    new_fitness <- c( fitness_pop[-which(fitness_pop==max(fitness_pop))[1]], fitness_offspring)
+  } else {
+    new_pop <- rbind( pop[which(fitness_pop == min(fitness_pop))[1],], offspring )
+    new_fitness <- c( min(fitness_pop), fitness_offspring)
+  }
+  return(list(pop = new_pop, fitness = new_fitness))
+}
+
+# Definimos el algoritmo. Dependiendo de offspring_size será elitista (preservando el mejor)
+# o SSGA (reemplazando al peor individuo)
+ga_cluster_similarity <- function(num_genes, pop_size, offspring_size, prob_mutation, prob_crossover, max_eval) {
+  # Inicializamos la población
+  pop <- init_pop(pop_size, num_genes)
+  
+  # Calculamos el fitness de la población inicial
+  fitness_pop <- sapply(1:nrow(pop), function(s) { evaluate_individual(pop[s,], matrix)})
+  
+  eval <- pop_size
+  
+  # Obtenemos las estadísticas
+  mins <- c(min(fitness_pop))
+  medians <- c(median(fitness_pop))
+  sds <- c(sd(fitness_pop))
+
+
+  # Ahora evolucionamos la población de manera elitista
+  while( eval <= max_eval ) {
+    # Generamos los candidatos (offspring)
+    offspring <- get_offspring(pop, fitness_pop, offspring_size)
+    
+    # Los evaluamos 
+    fitness_offspring <- sapply(1:nrow(offspring), function(s) { evaluate_individual(offspring[s,], matrix)})
+    
+    eval <- eval + length(fitness_offspring)
+    
+    # Reemplazamos la población de manera elitista, preservando el mejor
+    replacement <- replace_population(pop, offspring, fitness_pop, fitness_offspring)
+    pop <- replacement$pop
+    fitness_pop <- replacement$fitness
+    
+    # Obtenemos las estadísticas
+    mins <- c( mins, min(fitness_pop))
+    medians <- c( medians, median(fitness_pop))
+    sds <- c( sds, sd(fitness_pop))
+  }
+
+  return( list( best = pop[which(fitness_pop == min(fitness_pop))[1],], best_fitness = min(fitness_pop), best_features_size = sum(pop[which(fitness_pop == min(fitness_pop))[1],]*1), min_gen = mins, median_gen = medians, sd_gen = sds) )
+}
+
+```
+
+
+## Ejecución del GA
+``` {r echo=FALSE, warning=FALSE}
+# El número de genes corresponde a la cantidad de observaciones de un día
+num_genes <- ncol(matrix)
+# Tamaño de la población
+pop_size <- 10
+# Tamaño de la descendencia (pop_size-1 ó 1)
+#offspring_size <- pop_size -1
+offspring_size <- 1
+# Probabilidad de mutación
+prob_mutation <- 1 / num_genes
+# Probabilidad de crossover
+prob_crossover <- 0.8
+# Número máximo de evaluaciones
+max_eval <- 1000
+
+#1706
+results <- sapply(1:30, function(s) {
+  set.seed(s)
+  ga_cluster_similarity(num_genes, pop_size, offspring_size, prob_mutation, prob_crossover, max_eval) 
+})
+
+write.table(results, "results_ga.txt", sep="\t")
+
+```
+
+
+## Mostramos los resultados
+``` {r echo=FALSE, warning=FALSE}
+
+mins <- results[,1]$min_gen
+medians <- results[,1]$median_gen
+sds <- results[,1]$sd_gen
+
+# Graficamos la convergencia
+plot(mins,type="l", xlab="Generation", ylab="Fitness", lty=2, ylim=c(min(mins,sds), max(medians,sds)) ,main="GA - Cluster Similarity Convergence", lwd=1.5)
+lines(medians, type="l", lty=1)
+lines(sds, type="l", lty=3)
+legend("topright", legend=c("Min","Median","SD"), lty=c(2,1,3), bty="n", horiz = TRUE)
+
+# Revisamos la desviación de las soluciones en términos de número de variables y fitness
+par(mfrow=c(1,2))
+boxplot(unlist(results["best_features_size",]), ylab="# Features")
+boxplot(unlist(results["best_fitness",]), ylab="Fitness")
+sd(unlist(results["best_features_size",]))
+mean(unlist(results["best_features_size",]))
+sd(unlist(results["best_fitness",]))
+mean(unlist(results["best_fitness",]))
+
+# Graficamos la relación entre el número de variables y el fitness
+par(mfrow=c(1,1))
+plot(unlist(results["best_features_size",]),unlist(results["best_fitness",]), xlab="# Features", ylab="Fitness", main="Solutions")
+
+# Convertimos la selección de atributos (de la mejor solución para cada ejecución) en una matriz
+solutions_matrix <- t( sapply(1:length(results["best",]), function(s){
+  results[["best",s]]*1
+}) )
+# Obtenemos la hora a la que corresponde cada medida
+list_hours <- colnames(raw_data)[!colnames(raw_data) %in% c("file_name","consumption_date")]
+freq_solution <- colSums(solutions_matrix)
+# generamos un mapa de calor
+col_palette <- rev(heat.colors(max(freq_solution)-min(freq_solution)+1))
+col_freqs <- sapply( (freq_solution - min(freq_solution) + 1), function(s) { col_palette[s] } )
+barplot(freq_solution, names.arg = list_hours, col = col_freqs, xlab="Hour", ylab="Frequency", main="Measure Selection Frequency")
+
+```
