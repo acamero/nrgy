@@ -1,0 +1,98 @@
+---
+output: pdf_document
+---
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+library(lubridate)
+library(clValid)
+rm(list = ls())
+options(error=traceback)
+set.seed(1)
+
+```
+
+
+
+# Estudio de Carga Base
+
+En cada gráfico se muestra el consumo y la carga base, donde la carga base se calcula como el consumo mínimo del mes analizado. El número óptimo de agrupaciones para cada mes se realiza utilizando métricas de validación interna (*Conectividad*, *Dunn* y *Silhoutte*).
+
+``` {r echo=FALSE, warning=FALSE}
+# Cargamos los datos de consumo
+setwd("/home/andu/Documentos/uma/PHD/vatia/data/proc")
+raw_data <- read.table("data.txt",sep="\t")
+raw_meta <- read.table("meta.txt", sep="\t", encoding = "latin1")
+
+list_hours <- colnames(raw_data)[!colnames(raw_data) %in% c("file_name","consumption_date")]
+list_hours <- sapply(list_hours, function(s) { substr(s, 2, nchar(s))})
+
+# Definimos una función para convertir los datos de entrada en una lista de edificios
+data_2_list <- function(data, metadata) {
+  temp <- lapply(1:nrow(metadata), function(s) {
+    data[which(data$file_name == metadata$file_name[s]),]
+  })
+  return(temp)
+}
+
+
+
+# Definimos una función para dividir un DF por mes
+list_2_monthly_list <- function(list_dt) {
+  dts <- unique(substr(list_dt$consumption_date,1,7))
+  tmp <- lapply(dts, function(s) {
+    list_dt[which( substr(list_dt$consumption_date,1,7)==s),]
+  })
+  return(tmp)
+}
+
+# Definimos una función auxiliar que retorna la moda estadística
+val_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# Función que genera N clusters (donde N se escoge de manera automática utilizando métricas
+# de validación interna) y grafica los centros. En cada gráfico se muestra el consumo
+# y la carga base, donde la carga base se calcula como el consumo mínimo en el mes.
+monthly_charge <- function(m_data, building_name) {
+  tmp <- m_data[,which(!colnames(m_data) %in% c("file_name","consumption_date"))]
+  m_data_date <- unique(substr(m_data$consumption_date,1,7))
+  baseload <- min(tmp)
+  max_load <- max(tmp)
+  if(is.na(baseload)) { baseload <- 0}
+  iv <- clValid(tmp, 2:10, clMethods=c("kmeans"), validation="internal")
+  os <- optimalScores(iv)
+  cl <- as.numeric(as.character(val_mode(os$Clusters)))
+  km <- kmeans(tmp, cl)
+  par(mfrow=c(1,2), cex.main=0.7)
+  sapply( 1:length(km$size), function(x) {
+    ch <- km$centers[x,] - baseload
+    bl <- rep(baseload, length(km$centers[x,]))
+    #barplot(km$centers[x,], names.arg = list_hours, ylab="kW", xlab="Time")
+    main_t <- paste(building_name,"  (", m_data_date,")", sep="")
+    sub_t <- paste("Perfil ",x," de ",length(km$size)," (",km$size[x], " días)", sep="")
+    barplot(as.table(rbind(bl,ch)), names.arg = list_hours, ylab="kW", xlab="Tiempo", sub=sub_t, main=main_t, ylim=c(0,max_load))
+  })
+  par(reset=TRUE)
+}
+
+```
+
+``` {r echo=FALSE, warning=FALSE, results="asis"}
+# Y los convertimos en una lista
+list_data <- data_2_list(raw_data,raw_meta)
+# Para el edificio "s"
+for( s in 1:2) {
+#for( s in 1:nrow(raw_meta)) {
+  building <- paste( toupper(substr(raw_meta$name[s], 1,1)), tolower(substr(raw_meta$name[s], 2,20)), sep="")
+  #writeLines( paste("## ",building,sep=""))
+  monthly_data <- list_2_monthly_list(list_data[[s]])
+  lapply( monthly_data, function(tmp) {
+    if(nrow(tmp)>1) {
+      monthly_charge(tmp, building) 
+    }
+  })
+  
+}
+```
+
+
