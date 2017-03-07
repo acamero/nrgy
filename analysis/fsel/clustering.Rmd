@@ -152,8 +152,8 @@ Por ejemplo, a continuación se muestra el histograma de frecuencia de los atrib
 list_hours <- colnames(raw_data)[!colnames(raw_data) %in% c("file_name","consumption_date")]
 list_hours <- sapply(list_hours, function(s) { substr(s, 2, nchar(s))})
 par(mfrow=c(1,2))
-barplot(freqs[16,], names.arg = list_hours,  xlab="Hour", ylab="Frequency", main="Centro de Salud")
-barplot(freqs[9,], names.arg = list_hours,  xlab="Hour", ylab="Frequency", main="Museo")
+barplot(freqs[16,], names.arg = list_hours,  xlab="Hour", ylab="Frequency", main="Healthcare Center", ylim=c(0,30))
+barplot(freqs[9,], names.arg = list_hours,  xlab="Hour", ylab="Frequency", main="Museum", ylim=c(0,30))
 ```
 
 Utilizando los criterios previamente definidos buscamos el tamaño óptimo de agrupaciones. Los resultados obtenidos se muestran a continuación.

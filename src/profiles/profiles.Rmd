@@ -1,0 +1,166 @@
+---
+output: pdf_document
+---
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+library(timeDate)
+library(clValid)
+library(knitr)
+library(outliers)
+rm(list = ls())
+options(error=traceback)
+set.seed(1)
+
+```
+
+
+
+# Estudio de Perfiles Típicos de Carga
+
+
+
+``` {r echo=FALSE, warning=FALSE}
+####################### Carga de datos #########################
+
+# Cargamos los datos de consumo
+setwd("/home/andu/Documentos/uma/PHD/vatia/data/proc")
+raw_data <- read.table("data.txt",sep="\t")
+raw_meta <- read.table("meta.txt", sep="\t", encoding = "latin1")
+
+list_hours <- colnames(raw_data)[!colnames(raw_data) %in% c("file_name","consumption_date")]
+list_hours <- sapply(list_hours, function(s) { substr(s, 2, nchar(s))})
+
+```
+
+
+``` {r echo=FALSE, warning=FALSE}
+####################### Funciones auxiliares #########################
+
+# Definimos una función para convertir los datos de entrada en una lista de edificios
+data_2_list <- function(data) {
+  temp <- lapply(unique(data$file_name), function(s) {
+    data[which(data$file_name == s),]
+  })
+  return(temp)
+}
+
+
+# Definimos una función para dividir un DF por mes
+list_2_monthly_list <- function(list_dt) {
+  dts <- unique(substr(list_dt$consumption_date,1,7))
+  tmp <- lapply(dts, function(s) {
+    list_dt[which( substr(list_dt$consumption_date,1,7)==s),]
+  })
+  return(tmp)
+}
+
+
+# Definimos una función auxiliar que retorna la moda estadística
+val_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+
+# Función para "rellenar huecos" en un vector utilizando interpolación con una ventana móvil
+namav <- function(x,k=3){
+  x <- c(rep(NA, k),x,rep(NA,k)) # add NA on both sides
+  n <- length(x)
+  return(
+    sapply((k+1):(n-k), function(i) { sum(x[(i-k):(i+k)],na.rm=TRUE)/(2*k+1-sum(is.na(x[(i-k):(i+k)]))) 
+      })
+  )
+}
+
+```
+
+
+``` {r echo=FALSE, warning=FALSE}
+####################### Perfiles de carga #########################
+# Función para el cálculo de la carga base temporal
+base_load <- function(charge) {
+  charge_matrix <- charge[,!colnames(charge) %in% c("file_name","consumption_date")]
+  daily_min_charge <- sapply(1:nrow(charge_matrix), function(r) {min(charge_matrix[r,]) })
+  if( length(daily_min_charge)==1 || sd(daily_min_charge)==0 ) { 
+    outliers <- c() 
+    dmc_wo <- daily_min_charge
+  } else {  
+    outliers <- outlier(daily_min_charge) 
+    dmc_wo <- rm.outlier(daily_min_charge,fill=TRUE)
+  }
+  
+  dmc_wo_stats <- list( min=min(dmc_wo), max=max(dmc_wo), mean=mean(dmc_wo), median=median(dmc_wo), sd=sd(dmc_wo))
+  dmc_stats <- list( min=min(daily_min_charge), max=max(daily_min_charge), mean=mean(daily_min_charge), median=median(daily_min_charge), sd=sd(daily_min_charge))
+  return( list(dmc=daily_min_charge, outliers=outliers, dmc_stats=dmc_stats, dmc_wo_stats=dmc_wo_stats))
+}
+```
+
+
+``` {r echo=FALSE, warning=FALSE}
+####################### Perfiles de carga #########################
+
+# Función que genera N clusters (donde N se escoge de manera automática utilizando métricas
+# de validación interna) y grafica los centros. En cada gráfico se muestra el consumo
+# y la carga base, donde la carga base se calcula como el consumo mínimo en el mes.
+typical_profiles <- function(charge) {
+  charge_matrix <- charge[,which(!colnames(charge) %in% c("file_name","consumption_date"))]
+  # usando validación interna obtenemos el número óptimo de agrupaciones
+  n_clust <- c(2:10)
+  if(nrow(charge_matrix)<10) { n_clust <- c(2:(nrow(charge_matrix)-1))}
+  iv <- clValid(charge_matrix, n_clust, clMethods=c("kmeans"), validation="internal")
+  sel_measures <- c("Connectivity", "Dunn", "Silhouette")
+  if(nrow(charge_matrix)<10) { 
+    sel_measures <- c("Dunn", "Silhouette")
+  } 
+  os <- optimalScores(iv, measures = sel_measures)
+  cl <- as.numeric(as.character(val_mode(os$Clusters)))
+  km <- kmeans(charge_matrix, cl)
+  
+  # revisamos el calendario laborable
+  biz_days <- isBizday(as.timeDate(charge$consumption_date))
+  biz_clus <- table(km$cluster[biz_days])
+  holiday_clus <- table(km$cluster[!biz_days])
+  
+  return(list(centers = km$centers, clusters = km$cluster, size = km$size, biz_clus = biz_clus, holiday_clus = holiday_clus))
+}
+
+```
+
+``` {r echo=FALSE, warning=FALSE, results="asis", kable}
+# Y los convertimos en una lista
+list_data <- data_2_list(raw_data)
+
+# Escogemos para que edificios se ejecutará el programa
+
+
+s <- 2
+# Para el edificio "s"
+progr <- function(s) {
+  # Tomamos la información de la carga y la agrupamos por mes
+  monthly_data <- list_2_monthly_list(list_data[[s]])
+  
+  # Obtenemos el nombre del edificio (y lo arreglamos un pocp)
+  building <- paste( toupper(substr(raw_meta$name[s], 1,1)), tolower(substr(raw_meta$name[s], 2,50)), sep="")
+  
+  writeLines(paste("## Edificio: ", building, sep=""))
+  building <- substr(building, 1,20)
+  
+  writeLines("### Perfiles de Consumo y Carga Base")
+  # Generaremos las curvas de carga con línea base para cada mes
+  profiles <- lapply( monthly_data, function(tmp) {
+    if(nrow(tmp)>1) {
+      typical_profiles(tmp) 
+    }
+  })
+  
+  bls <- lapply( monthly_data, function(tmp) {
+    if(nrow(tmp)>1) {
+      base_load(tmp) 
+    }
+  })
+  
+}
+
+progr(s)
+```
+
+

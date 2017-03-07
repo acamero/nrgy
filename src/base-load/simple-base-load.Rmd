@@ -1,0 +1,219 @@
+---
+output: pdf_document
+---
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+#library(lubridate)
+library(clValid)
+#library(RMySQL)
+library(knitr)
+library(outliers)
+rm(list = ls())
+options(error=traceback)
+set.seed(1)
+
+```
+
+
+
+# Estudio de Carga Base
+
+
+
+``` {r echo=FALSE, warning=FALSE}
+# Cargamos los datos de consumo
+setwd("/home/andu/Documentos/uma/PHD/vatia/data/proc")
+raw_data <- read.table("data.txt",sep="\t")
+raw_meta <- read.table("meta.txt", sep="\t", encoding = "latin1")
+
+list_hours <- colnames(raw_data)[!colnames(raw_data) %in% c("file_name","consumption_date")]
+list_hours <- sapply(list_hours, function(s) { substr(s, 2, nchar(s))})
+
+```
+
+``` {r echo=FALSE, warning=FALSE}
+# Definimos una función para convertir los datos de entrada en una lista de edificios
+data_2_list <- function(data, metadata) {
+  temp <- lapply(1:nrow(metadata), function(s) {
+    data[which(data$file_name == metadata$file_name[s]),]
+  })
+  return(temp)
+}
+
+
+# Definimos una función para dividir un DF por mes
+list_2_monthly_list <- function(list_dt) {
+  dts <- unique(substr(list_dt$consumption_date,1,7))
+  tmp <- lapply(dts, function(s) {
+    list_dt[which( substr(list_dt$consumption_date,1,7)==s),]
+  })
+  return(tmp)
+}
+
+
+# Definimos una función auxiliar que retorna la moda estadística
+val_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# Función para el cálculo de la carga base temporal
+base_load <- function(charge) {
+  charge_matrix <- charge[,!colnames(charge) %in% c("file_name","consumption_date")]
+  daily_min_charge <- sapply(1:nrow(charge_matrix), function(r) {min(charge_matrix[r,]) })
+  if( length(daily_min_charge)==1 || sd(daily_min_charge)==0 ) { 
+    outliers <- c() 
+    dmc_wo <- daily_min_charge
+  } else {  
+    outliers <- outlier(daily_min_charge) 
+    dmc_wo <- rm.outlier(daily_min_charge,fill=TRUE)
+  }
+  # dmc_wo <- daily_min_charge[!daily_min_charge %in% outliers]
+  dmc_wo_stats <- list( min=min(dmc_wo), max=max(dmc_wo), mean=mean(dmc_wo), median=median(dmc_wo), sd=sd(dmc_wo))
+  dmc_stats <- list( min=min(daily_min_charge), max=max(daily_min_charge), mean=mean(daily_min_charge), median=median(daily_min_charge), sd=sd(daily_min_charge))
+  return( list(dmc=daily_min_charge, outliers=outliers, dmc_stats=dmc_stats, dmc_wo_stats=dmc_wo_stats))
+}
+```
+
+
+``` {r echo=FALSE, warning=FALSE, results="asis"}
+####################################################################################
+# Seleccionamos un edificio
+building <- 2
+#building <- 16
+# Obtenemos el nombre del edificio (y lo arreglamos un pocp)
+building_name <- paste( toupper(substr(raw_meta$name[building], 1,1)), tolower(substr(raw_meta$name[building], 2,50)), sep="")
+####################################################################################
+```
+
+
+
+
+## `r building_name`
+
+
+
+
+### Mensual
+
+``` {r echo=FALSE, warning=FALSE, results="asis"}
+# Y los convertimos en una lista
+list_data <- data_2_list(raw_data,raw_meta)
+
+# Para el edificio "s"
+monthly_base_load <- function(s) {
+  # Tomamos la información de la carga y la agrupamos por mes
+  monthly_data <- list_2_monthly_list(list_data[[s]])
+  results <- lapply(monthly_data, base_load)
+  return(results)
+}
+
+# Obtenemos los valores de carga mensuales
+res_monthly <- monthly_base_load(building)
+dmc_stats <- t(sapply(res_monthly, function(t){t$dmc_stats}))
+rownames(dmc_stats)  <- unique(substr(list_data[[building]]$consumption_date,1,7))
+dmc_wo_stats <- t(sapply(res_monthly, function(t){t$dmc_wo_stats}))
+rownames(dmc_wo_stats)  <- rownames(dmc_stats)
+
+# Seleccionamos un mes para los ejemplos
+month <- 1
+month_name <- rownames(dmc_stats)[month]
+```
+
+La siguiente tabla muestra los valores estadísticos mensuales para las cargas mínimas diarias. De estos valores se puede determinar la carga base mensual del edificio.
+
+`r kable(dmc_stats)`
+
+A continuación se muestra a modo de ejemplo los consumos mínimos observados en el mes `r month_name`. De la gráfica se puede concluir que hay mediciones fuera de rango (o *outliers*), por lo que se procede a descartar los valores que presentan la mayor distancia con respecto a la media.
+
+``` {r echo=FALSE, warning=FALSE, results="asis"}
+plot(res_monthly[[month]]$dmc, type="l", xlab="Día", ylab="Consumo Mínimo [kWh]", main=month_name)
+mute <- lapply(res_monthly[[month]]$outliers, function(p){points(which(res_monthly[[month]]$dmc == p), p)})
+```
+
+A partir del conjunto de mediciones *corregido*, es decir sin los valores considerados fuera de rango, se realiza el cálculo de los valores estadísticos mensuales.
+
+`r kable(dmc_wo_stats, format.args = list(decimal.mark = "."))`
+
+Considerando el valor mínimo (de la tabla anterior) para el mes en análisis, se procede a caracterizar los consumos diarios y a marcar sobre éstos la carga base estimada.
+
+``` {r echo=FALSE, warning=FALSE, results="asis"}
+monthly_charge <- function(charge_data,  baseload_stats, main_title ="") {
+  tmp <- charge_data[,which(!colnames(charge_data) %in% c("file_name","consumption_date"))]
+  max_load <- max(tmp)
+  iv <- clValid(tmp, 2:10, clMethods=c("kmeans"), validation="internal")
+  os <- optimalScores(iv)
+  cl <- as.numeric(as.character(val_mode(os$Clusters)))
+  km <- kmeans(tmp, cl)
+  par(mfrow=c(1,1), cex.main=1)
+  bps <- sapply( 1:length(km$size), function(x) {
+    ch <- km$centers[x,] - baseload_stats$min
+    bl <- rep(baseload_stats$min, length(km$centers[x,]))
+    sub_t <- paste("Perfil ",x," de ",length(km$size)," (",km$size[x], " días)", sep="")
+    bp <- barplot(as.table(rbind(bl,ch)), names.arg = list_hours, ylab="kWh", xlab="Hora", sub=sub_t, ylim=c(0,max_load), main=main_title)
+    lines(x=bp,y=rep(baseload_stats$mean,length(bl)), col="blue")
+    lines(x=bp,y=rep(baseload_stats$max,length(bl)), col="red")
+    legend("topright", legend=c("Mín","Máx","Media"), bty="n", cex=0.9, col=c("black","red","blue"), pch=15, horiz=TRUE)
+    writeLines("\n\n")
+  })
+  
+  par(mfrow=c(1,1), cex.main=1)
+  return(bps)
+}
+
+list_monthly_charge <- list_2_monthly_list(list_data[[building]])[[month]]
+monthly_stats <- res_monthly[[month]]$dmc_wo_stats
+mute <- monthly_charge(list_monthly_charge,  monthly_stats, main_title = month_name)
+```
+
+
+
+
+
+### Anual
+
+Ahora bien, considerando un año como la ventana temporal para el cálculo de la carga base, se obtienen la siguientes medidas para la carga base, considerando todas las observaciones (*Completo*) y el conjunto de observaciones sin los valores fuera de rango (*Corregido*).
+
+``` {r echo=FALSE, warning=FALSE, results="asis"}
+yearly_charge <- list_data[[building]]
+yearly_baseload <- base_load(yearly_charge)
+
+y_bl_stats <- rbind( t(yearly_baseload$dmc_stats), t(yearly_baseload$dmc_wo_stats))
+rownames(y_bl_stats) <- c("Completo", "Corregido")
+``` 
+
+`r kable(y_bl_stats)`
+
+
+## Todos los edificios
+
+``` {r echo=FALSE, warning=FALSE, results="asis"}
+
+tot <- lapply(1:64, function(s) {
+  res_monthly <- monthly_base_load(s)
+  #dmc_stats <- t(sapply(res_monthly, function(t){t$dmc_stats}))
+  #rownames(dmc_stats)  <- unique(substr(list_data[[building]]$consumption_date,1,7))
+  dmc_wo_stats <- t(sapply(res_monthly, function(t){t$dmc_wo_stats}))
+  rownames(dmc_wo_stats)  <- unique(substr(list_data[[s]]$consumption_date,1,7))
+  dmc_wo_stats
+})
+
+tot_m <- sapply(1:64, function(s) {
+name <- paste( toupper(substr(raw_meta$name[s], 1,1)), tolower(substr(raw_meta$name[s], 2,50)), sep="")
+cbind(name,tot[[s]])
+})
+
+tot_bind <- do.call(rbind,tot_m)
+setwd("/home/andu/Documentos/uma/PHD/vatia/reports/carga-base")
+write.csv(tot_bind,file="mensual.csv")
+
+tot_y <- lapply(1:64, function(s) {
+  yearly_charge <- list_data[[s]]
+  yearly_baseload <- base_load(yearly_charge)
+  yearly_baseload$dmc_wo_stats
+})
+
+tot_ym <- t(sapply(tot_y, t))
+colnames(tot_ym) <- colnames(t(tot_y[[1]]))
+rownames(tot_ym) <- paste( toupper(substr(raw_meta$name, 1,1)), tolower(substr(raw_meta$name, 2,50)), sep="")
+write.csv(tot_ym,file="anual.csv")
+```
