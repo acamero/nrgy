@@ -6,6 +6,7 @@ library(timeDate)
 library(clValid)
 library(knitr)
 library(outliers)
+library(plyr)
 rm(list = ls())
 options(error=traceback)
 set.seed(1)
@@ -13,8 +14,6 @@ set.seed(1)
 ```
 
 
-
-# Estudio de Perfiles Típicos de Carga
 
 
 
@@ -71,6 +70,28 @@ namav <- function(x,k=3){
   )
 }
 
+# A partir de un vector de coeficientes calcula el valor de la función en x
+f_x <- function( poly, x) {
+  facts <- sapply(1:length(poly), function(t) { (x**(t-1)) * poly[t] })
+  return( sum(facts))
+}
+
+# Imprime el polinomio representado por el vector
+f_x_print <- function( poly, precision = 2 ) {
+  facts <- lapply(1:length(poly), function(t) { paste( format(poly[t], digits=2, nsmall= precision),"x^",t, sep="")} )
+  do.call(paste, c(facts, sep=" + "))
+}
+
+## A helper function that tests whether an object is either NULL _or_ 
+## a list of NULLs
+is.NullOb <- function(x) is.null(x) | all(sapply(x, is.null))
+
+## Recursively step down into list, removing all such objects 
+rmNullObs <- function(x) {
+   x <- Filter(Negate(is.NullOb), x)
+   lapply(x, function(x) if (is.list(x)) rmNullObs(x) else x)
+}
+
 ```
 
 
@@ -125,42 +146,128 @@ typical_profiles <- function(charge) {
 
 ```
 
-``` {r echo=FALSE, warning=FALSE, results="asis", kable}
-# Y los convertimos en una lista
-list_data <- data_2_list(raw_data)
 
-# Escogemos para que edificios se ejecutará el programa
+``` {r echo=FALSE, warning=FALSE}
+####################### Aproximación analítica #########################
+
+poly_model <- function(kmy, max_order = 5) {
+  kmx <- 1:length(kmy)
+  fits <- lapply( 1:max_order, function(s) { lm( formula = kmy ~ poly(kmx,s,raw=TRUE)) })
+  anova_t <- do.call(anova, fits)
+  fit_sel <- max(which(anova_t$`Pr(>F)` < 0.05 ))
+  return(fits[[fit_sel]])
+}
+
+extract_poly <- function( lm_model ) {
+  sum <- summary.lm(lm_model)
+  poly <- sum$coefficients[,1]
+  names(poly) <- 0:(length(poly)-1)
+  return(poly)
+}
+
+```
 
 
-s <- 2
-# Para el edificio "s"
-progr <- function(s) {
-  # Tomamos la información de la carga y la agrupamos por mes
-  monthly_data <- list_2_monthly_list(list_data[[s]])
-  
-  # Obtenemos el nombre del edificio (y lo arreglamos un pocp)
-  building <- paste( toupper(substr(raw_meta$name[s], 1,1)), tolower(substr(raw_meta$name[s], 2,50)), sep="")
-  
-  writeLines(paste("## Edificio: ", building, sep=""))
-  building <- substr(building, 1,20)
-  
-  writeLines("### Perfiles de Consumo y Carga Base")
-  # Generaremos las curvas de carga con línea base para cada mes
-  profiles <- lapply( monthly_data, function(tmp) {
+``` {r echo=FALSE, warning=FALSE, results="asis", fig.width=5, fig.height=4, fig.align="center"}
+# Función que para una lista de consumos retorna los perfiles típicos, carga base y las
+# aproximaciones de los perfiles mediante polinomios
+proc_charge <- function(nrgy_data, max_order = 6) {
+  # Obtenemos los perfiles típicos de consumo
+  profiles <- lapply( nrgy_data, function(tmp) {
     if(nrow(tmp)>1) {
       typical_profiles(tmp) 
     }
   })
   
-  bls <- lapply( monthly_data, function(tmp) {
+  # Estimamos la carga base
+  bls <- lapply( nrgy_data, function(tmp) {
     if(nrow(tmp)>1) {
       base_load(tmp) 
     }
   })
   
+  # Aproximamos los perfiles típicos mediante polinomios
+  poly_approxs <- lapply( profiles, function(tmp) {
+    if(!is.null(tmp)) {
+      polys <- list()
+      for( index in 1:nrow(tmp$centers)) {
+        pm <- poly_model(tmp$centers[index,], max_order = max_order)
+        polys[[index]] <- extract_poly(pm)
+      }
+      polys
+    }
+  })
+  
+  return( list(profiles = profiles, base_load = bls, poly_approxs = poly_approxs))
 }
 
-progr(s)
+
+# Convertimos los datos en una lista por edificio
+list_data <- data_2_list(raw_data)
+# Escogemos un edificio
+s <- 16
+# Tomamos la información de la carga de dicho edificio y la agrupamos por mes
+monthly_data <- list_2_monthly_list(list_data[[s]])
+# Obtenemos el nombre del edificio (y lo arreglamos un poco)
+building <- paste( toupper(substr(raw_meta$name[s], 1,1)), tolower(substr(raw_meta$name[s], 2,50)), sep="")
+# Imprimimos la cabecera
+writeLines(paste("# ",building, sep=""))
+writeLines("\n\n\n")
+writeLines(paste("Fichero: ", raw_meta$file_name[s], sep=""))
+writeLines("\n\n\n")
+
+writeLines("Nivel de Agregación: Mensual")
+writeLines("\n\n\n")
+
+# Calculamos la carga base, los perfiles típicos y las aproximaciones analíticas 
+building_info <- proc_charge(monthly_data)
+# building_info <- rmNullObs(building_info)
+stats_bl <- t(sapply(rmNullObs(building_info$base_load), function(bl) { bl$dmc_wo_stats }))
+stats_rn <- sapply( 1:length(building_info$base_load), function(i) { 
+  if(!is.null(building_info$base_load[[i]])) {
+    unique(substr(monthly_data[[i]]$consumption_date, 1,7))
+  }
+})
+rownames(stats_bl) <- unlist(rmNullObs(stats_rn))
+writeLines("Carga Base Estimada:")
+kable(stats_bl, format.args = list(decimal.mark = ".") )
+
+
+writeLines("\\newpage")
+
+# Generamos las gráficas
+for( i in 1:length(building_info$profiles) ) {
+  if(!is.null(building_info$profiles[[i]])) {
+    main_t <- unique(substr(monthly_data[[i]]$consumption_date, 1,7))
+    writeLines(paste("## ", main_t, "\n", sep=""))
+    for( x in 1:nrow(building_info$profiles[[i]]$centers) ) {
+      max_load <- max(building_info$profiles[[i]]$centers) * 1.2
+      ch <- building_info$profiles[[i]]$centers[x,] - building_info$base_load[[i]]$dmc_wo_stats$min
+      bl <- rep(building_info$base_load[[i]]$dmc_wo_stats$min, length(ch))
+      sub_t <- paste("Perfil ",x," de ",length(building_info$profiles[[i]]$size)," (",building_info$profiles[[i]]$size[x], " días)", sep="")
+      # Barplot con la mínima como carga base
+      bp <- barplot(as.table(rbind(bl,ch)), names.arg = list_hours, ylab="kWh", xlab="Hora", sub=sub_t, ylim=c(0,max_load))
+      # Carga base Media 
+      lines(x=bp,y=rep(building_info$base_load[[i]]$dmc_wo_stats$mean,length(bl)), col="blue")
+      # Carga base Máx
+      lines(x=bp,y=rep(building_info$base_load[[i]]$dmc_wo_stats$max,length(bl)), col="red")
+      # Aproximación mediante un polinomio
+      apr <- sapply(1:length(bp), function(t) {f_x(building_info$poly_approxs[[i]][[x]], t)})
+      lines(x=bp,y=apr, col="green", lty=2)
+      # Leyenda del gráfico
+      legend("topright", legend=c("Mín","Máx","Media","Poly"), bty="n", cex=0.8, col=c("black","red","blue","green"), pch=15, horiz=TRUE)
+      writeLines("\n\n")
+      writeLines(paste("Poly ",x,":",sep=""))
+      writeLines( f_x_print(building_info$poly_approxs[[i]][[x]]) )
+      writeLines("\n\n\n\n")
+    }
+    clus_matrix <- rbind.fill.matrix(t(building_info$profiles[[i]]$biz_clus), t(building_info$profiles[[i]]$holiday_clus))
+    clus_matrix[is.na(clus_matrix)] <- 0
+    rownames(clus_matrix) <- c("Laborable", "No laborable")
+    #writeLines("Clasificación de perfiles típicos por cluster")
+    print(kable(clus_matrix))
+    cat("\n")
+    writeLines("\\newpage")
+  }
+}
 ```
-
-
