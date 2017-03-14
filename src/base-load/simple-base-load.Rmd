@@ -78,8 +78,8 @@ base_load <- function(charge) {
 ``` {r echo=FALSE, warning=FALSE, results="asis"}
 ####################################################################################
 # Seleccionamos un edificio
-building <- 2
-#building <- 16
+#building <- 2
+building <- 16
 # Obtenemos el nombre del edificio (y lo arreglamos un pocp)
 building_name <- paste( toupper(substr(raw_meta$name[building], 1,1)), tolower(substr(raw_meta$name[building], 2,50)), sep="")
 ####################################################################################
@@ -203,7 +203,7 @@ cbind(name,tot[[s]])
 })
 
 tot_bind <- do.call(rbind,tot_m)
-setwd("/home/andu/Documentos/uma/PHD/vatia/reports/carga-base")
+setwd("/home/andu/Documentos/uma/PHD/vatia/reports/1-carga-base")
 write.csv(tot_bind,file="mensual.csv")
 
 tot_y <- lapply(1:64, function(s) {
