@@ -1,4 +1,5 @@
 rm(list=ls())
+library(clValid)
 # Cargamos el código del algoritmo
 source("ssga.r")
 # Cargamos los datos
@@ -11,6 +12,25 @@ raw_data <- read.table("data.txt",sep="\t")
 #select_list <- c(37,5,3,40,56,36,33,30,60,28,64,32,13,14,54,23,9,59,63,39,55,24,51,19,21,8,61,62,10,45)
 #select_list <- setdiff(1:64,select_list)
 select_list <- 1:64
+
+#######################################################################################
+# Definimos una función auxiliar que retorna la moda estadística
+val_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+optimal_clus <- function(list_ch) {
+  set.seed(1)
+  n_clust <- c(2:10)
+  ivs <- lapply(list_ch, function(lt) {
+    clValid(lt, n_clust, clMethods=c("kmeans"), validation="internal", maxitems=1000)
+  })
+  sel_measures <- c("Connectivity", "Dunn", "Silhouette")
+  oss <- lapply(ivs, function(iv) { optimalScores(iv, measures = sel_measures) })
+  num_clusters <- lapply(oss, function(os) { as.numeric(as.character(val_mode(os$Clusters))) })
+  return(num_clusters)
+}
 
 #######################################################################################
 execute_ssga_building <- function(raw_data, raw_metadata, select, seed) {
@@ -29,8 +49,8 @@ execute_ssga_building <- function(raw_data, raw_metadata, select, seed) {
   prob_crossover <- 0.8
   # Número máximo de evaluaciones
   max_eval <- 1000
-  # Número de clusters
-  num_clusters <- 3
+  # Obtenemos el número óptimo de clusters
+  num_clusters <- optimal_clus(list_matrix_con)
   # obtenemos la "verdad"
   set.seed(1)
   ground_clusters <- get_clusters( list_matrix_con, num_clusters )
@@ -55,17 +75,16 @@ execute_ssga_building <- function(raw_data, raw_metadata, select, seed) {
  
 
 #######################################################################################
-seed <- 1
+#seed <- 1
 # Revisamos si se ha pasado una nueva semilla por línea de comandos
-args <- commandArgs(trailingOnly = TRUE)
-if (length(args)==1) {
-  seed <- as.integer(args[1])
-}
-
+#args <- commandArgs(trailingOnly = TRUE)
+#if (length(args)==1) {
+#  seed <- as.integer(args[1])
+#}
 #lapply( select_list, function(s) { execute_ssga_building(raw_data, raw_metadata, s, seed) })
 
 lapply( select_list, function(s) {
-  for( seed in 2:30 ){
+  for( seed in 1:30 ){
     execute_ssga_building(raw_data, raw_metadata, s, seed) 
   }
 })

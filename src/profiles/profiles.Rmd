@@ -77,8 +77,20 @@ f_x <- function( poly, x) {
 }
 
 # Imprime el polinomio representado por el vector
-f_x_print <- function( poly, precision = 2 ) {
-  facts <- lapply(1:length(poly), function(t) { paste( format(poly[t], digits=2, nsmall= precision),"x^", (t-1), sep="")} )
+f_x_print <- function( poly_lm, precision = 2 ) {
+  poly <- extract_poly(poly_lm)
+  facts <- lapply(1:length(poly), function(t) { 
+    if(t>2) {
+      paste( format(poly[t], digits=2, nsmall= precision),"x^", (t-1), sep="")
+    } else {
+      if(t>1) {
+        paste( format(poly[t], digits=2, nsmall= precision),"x", sep="")
+      } else {
+        format(poly[t], digits=2, nsmall= precision)
+      }
+    }
+  } )
+    
   do.call(paste, c(facts, sep=" + "))
 }
 
@@ -161,7 +173,10 @@ poly_model <- function(kmy, max_order = 5) {
   fits <- lapply( 1:max_order, function(s) { lm( formula = kmy ~ poly(kmx,s,raw=TRUE)) })
   anova_t <- do.call(anova, fits)
   fit_sel <- max(which(anova_t$`Pr(>F)` < 0.05 ))
-  return(fits[[fit_sel]])
+  if(fit_sel < 1) {
+    fit_sel <- length(fits)
+  }
+  return(fits[[ fit_sel ]])
 }
 
 extract_poly <- function( lm_model ) {
@@ -169,6 +184,11 @@ extract_poly <- function( lm_model ) {
   poly <- sum$coefficients[,1]
   names(poly) <- 0:(length(poly)-1)
   return(poly)
+}
+
+extract_rse <- function( lm_model ) {
+  sum <- summary.lm(lm_model)
+  return( sum$sigma )
 }
 
 ```
@@ -198,7 +218,8 @@ proc_charge <- function(nrgy_data, max_order = 6) {
       polys <- list()
       for( index in 1:nrow(tmp$centers)) {
         pm <- poly_model(tmp$centers[index,], max_order = max_order)
-        polys[[index]] <- extract_poly(pm)
+        # polys[[index]] <- extract_poly(pm)
+        polys[[index]] <- pm
       }
       polys
     }
@@ -210,8 +231,10 @@ proc_charge <- function(nrgy_data, max_order = 6) {
 
 # Convertimos los datos en una lista por edificio
 list_data <- data_2_list(raw_data)
+####################################
 # Escogemos un edificio
-s_meta <- 1
+s_meta <- 3
+
 #s_meta <- 62
 # Obtenemos el nombre del edificio (y lo arreglamos un poco)
 building <- paste( toupper(substr(raw_meta[s_meta,c("name")], 1,1)), tolower(substr(raw_meta[s_meta,c("name")], 2,90)), sep="")
@@ -237,6 +260,7 @@ writeLines("\n\n\n")
 monthly_data <- list_2_monthly_list(list_data[[s]])
 building_info <- proc_charge(monthly_data)
 
+
 # building_info <- rmNullObs(building_info)
 stats_bl <- t(sapply(rmNullObs(building_info$base_load), function(bl) { bl$dmc_wo_stats }))
 stats_rn <- sapply( 1:length(building_info$base_load), function(i) { 
@@ -255,7 +279,8 @@ for( i in 1:length(building_info$profiles) ) {
   if(!is.null(building_info$profiles[[i]])) {
     main_t <- unique(substr(monthly_data[[i]]$consumption_date, 1,7))
     writeLines(paste("## ", main_t, "\n", sep=""))
-    for( x in 1:nrow(building_info$profiles[[i]]$centers) ) {
+    p_sort <- sort(building_info$profiles[[i]]$size, decreasing = TRUE, index.return=TRUE)$ix
+    pls <- lapply(p_sort , function(x) {
       max_load <- max(building_info$profiles[[i]]$centers) * 1.2
       ch <- building_info$profiles[[i]]$centers[x,] - building_info$base_load[[i]]$dmc_wo_stats$min
       bl <- rep(building_info$base_load[[i]]$dmc_wo_stats$min, length(ch))
@@ -263,19 +288,19 @@ for( i in 1:length(building_info$profiles) ) {
       # Barplot con la mínima como carga base
       bp <- barplot(as.table(rbind(bl,ch)), names.arg = list_hours, ylab="kWh", xlab="Hora", sub=sub_t, ylim=c(0,max_load))
       # Carga base Media 
-      lines(x=bp,y=rep(building_info$base_load[[i]]$dmc_wo_stats$mean,length(bl)), col="blue")
+      lines(x=bp,y=rep(building_info$base_load[[i]]$dmc_wo_stats$mean,length(bl)), col="blue", lwd=2)
       # Carga base Máx
-      lines(x=bp,y=rep(building_info$base_load[[i]]$dmc_wo_stats$max,length(bl)), col="red")
+      lines(x=bp,y=rep(building_info$base_load[[i]]$dmc_wo_stats$max,length(bl)), col="red", lwd=2)
       # Aproximación mediante un polinomio
-      apr <- sapply(1:length(bp), function(t) {f_x(building_info$poly_approxs[[i]][[x]], t)})
-      lines(x=bp,y=apr, col="green", lty=2)
+      lines(x=bp,y=building_info$poly_approxs[[i]][[x]]$fitted.values, col="green", lty=2, lwd=2.5)
       # Leyenda del gráfico
       legend("topright", legend=c("Mín","Máx","Media","Poly"), bty="n", cex=0.8, col=c("black","red","blue","green"), pch=15, horiz=TRUE)
       writeLines("\n\n")
       writeLines(paste("Poly ",x,":",sep=""))
       writeLines( f_x_print(building_info$poly_approxs[[i]][[x]]) )
+      writeLines( paste(" (RSE=", format(extract_rse(building_info$poly_approxs[[i]][[x]]), digits=2, nsmall=2) ,")",sep=""))
       writeLines("\n\n\n\n")
-    }
+    } )
     clus_matrix <- rbind.fill.matrix(t(building_info$profiles[[i]]$biz_clus), t(building_info$profiles[[i]]$holiday_clus))
     clus_matrix[is.na(clus_matrix)] <- 0
     rownames(clus_matrix) <- c("Laborable", "No laborable")
@@ -305,17 +330,19 @@ for( x in 1:nrow(y_building_info$profiles[[i]]$centers) ) {
   # Barplot con la mínima como carga base
   bp <- barplot(as.table(rbind(bl,ch)), names.arg = list_hours, ylab="kWh", xlab="Hora", sub=sub_t, ylim=c(0,max_load))
   # Carga base Media 
-  lines(x=bp,y=rep(y_building_info$base_load[[i]]$dmc_wo_stats$mean,length(bl)), col="blue")
+  lines(x=bp,y=rep(y_building_info$base_load[[i]]$dmc_wo_stats$mean,length(bl)), col="blue", lwd=2)
   # Carga base Máx
-  lines(x=bp,y=rep(y_building_info$base_load[[i]]$dmc_wo_stats$max,length(bl)), col="red")
+  lines(x=bp,y=rep(y_building_info$base_load[[i]]$dmc_wo_stats$max,length(bl)), col="red", lwd=2)
   # Aproximación mediante un polinomio
-  apr <- sapply(1:length(bp), function(t) {f_x(y_building_info$poly_approxs[[i]][[x]], t)})
-  lines(x=bp,y=apr, col="green", lty=2)
+  #apr <- sapply(1:length(bp), function(t) {f_x(y_building_info$poly_approxs[[i]][[x]], t)})
+  #lines(x=bp,y=apr, col="green", lty=2, lwd=2.5)
+  lines(x=bp,y=y_building_info$poly_approxs[[i]][[x]]$fitted.values, col="green", lty=2, lwd=2.5)
   # Leyenda del gráfico
   legend("topright", legend=c("Mín","Máx","Media","Poly"), bty="n", cex=0.8, col=c("black","red","blue","green"), pch=15, horiz=TRUE)
   writeLines("\n\n")
   writeLines(paste("Poly ",x,":",sep=""))
   writeLines( f_x_print(y_building_info$poly_approxs[[i]][[x]]) )
+  writeLines( paste(" (RSE=", format(extract_rse(y_building_info$poly_approxs[[i]][[x]]), digits=2, nsmall=2),")",sep=""))
   writeLines("\n\n\n\n")
 }
 clus_matrix <- rbind.fill.matrix(t(y_building_info$profiles[[i]]$biz_clus), t(y_building_info$profiles[[i]]$holiday_clus))
@@ -332,4 +359,37 @@ cat("\n")
 #lapply(1:nrow(tmp), function(j) {
 #  plot(1:96,tmp[j,], type="l", xlab="", ylab="", ylim=tmp_lim)
 #})
+```
+
+``` {r echo=FALSE, warning=FALSE, results="asis", fig.width=6.2, fig.height=1.5, fig.align="left"} 
+writeLines("\\newpage")
+writeLines("## Resumen Anual")
+# Resumen de perfiles
+max_p <- 3
+max_load <- 1
+for( i in 1:length(building_info$profiles) ) {
+  if( length(building_info$profiles[[i]]$size) > max_p ) {
+    max_p <- length(building_info$profiles[[i]]$size)
+  }
+  if( max(building_info$profiles[[i]]$centers) > max_load) {
+    max_load <- max(building_info$profiles[[i]]$centers)
+  }
+}
+max_load <- max_load*1.1
+
+par(mfrow=c(1,max_p), mar=c(3.5,3.5,2,1), mgp=c(0.4, 0.4,0))
+for( i in 1:length(building_info$profiles) ) {
+   if(!is.null(building_info$profiles[[i]])) {
+     main_t <- unique(substr(monthly_data[[i]]$consumption_date, 1,7))
+     p_sort <- sort(building_info$profiles[[i]]$size, decreasing = TRUE, index.return=TRUE)$ix
+     lapply(p_sort, function(x) {
+       sub_t <- paste("Perfil ",x," de ",length(building_info$profiles[[i]]$size)," (",building_info$profiles[[i]]$size[x], " días)", sep="")
+       plot(1:length(building_info$profiles[[i]]$centers[x,]),  building_info$profiles[[i]]$centers[x,], type="l", ylab="", xlab="", xaxt="n", ylim=c(0,max_load), main=main_t, sub=sub_t)
+     })
+     if((max_p - length(p_sort)) > 0) {
+      lapply( 1:(max_p - length(p_sort)), function(x) { plot.new() } )
+     }
+   }
+}
+par(mfrow=c(1,1))
 ```

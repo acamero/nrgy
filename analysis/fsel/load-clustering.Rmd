@@ -1,0 +1,222 @@
+---
+output: pdf_document
+---
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+rm(list = ls())
+options(error=traceback)
+set.seed(1)
+library(clValid)
+library(kohonen)
+library(MASS)
+library(class)
+#library(NbClust)
+```
+
+
+
+# Agrupación basada en centro representativo
+
+Agrupamos los perfiles diarios de consumo de cada edificio en k grupos de manera independiente para cada edificio.
+
+``` {r echo=FALSE, warning=FALSE}
+# Convertir datos de entrada en una lista de matrices
+data_2_lmat <- function(data, metadata) {
+  matrix <- data[,!colnames(data) %in% c("file_name","consumption_date")]
+  l_matrix <- lapply(1:nrow(metadata), function(s) {
+    matrix[which(data$file_name == metadata$file_name[s]),]
+  })
+  return(l_matrix)
+}
+
+# Cargamos los datos de consumo
+setwd("/home/andu/Documentos/uma/PHD/papers/load-curve/results")
+raw_data <- read.table("data.txt",sep="\t")
+raw_meta <- read.table("meta.txt", sep="\t", encoding = "latin1")
+building_names <- paste( toupper(substr(raw_meta$name, 1,1)), tolower(substr(raw_meta$name, 2,20)), sep="")
+
+
+# Y los convertimos en una lista de matrices
+list_matrix_con <- data_2_lmat(raw_data,raw_meta)
+
+#######################################################################################
+# Definimos una función auxiliar que retorna la moda estadística
+val_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+optimal_clus <- function(list_ch) {
+  set.seed(1)
+  n_clust <- c(2:10)
+  ivs <- lapply(list_ch, function(lt) {
+    clValid(lt, n_clust, clMethods=c("kmeans"), validation="internal", maxitems=1000)
+  })
+  sel_measures <- c("Connectivity", "Dunn", "Silhouette")
+  oss <- lapply(ivs, function(iv) { optimalScores(iv, measures = sel_measures) })
+  num_clusters <- lapply(oss, function(os) { as.numeric(as.character(val_mode(os$Clusters))) })
+  return(num_clusters)
+}
+
+num_clusters <- optimal_clus(list_matrix_con)
+
+# Agrupamos para cada edificio de manera independiente
+set.seed(1)
+clusters <- lapply(1:length(list_matrix_con), function(index) {
+  kmeans(list_matrix_con[[index]], num_clusters[[index]], 30, 10)
+})
+
+
+```
+
+
+Luego, para cada edificio se selecciona el centro que incorpora un mayor número de perfiles diarios de consumo, al cual llamaremos el centro  representativo del edificio. Utilizando dicho centro se busca el número óptimo de agrupaciones (con los mismos criterios que el caso anterior).
+
+``` {r echo=FALSE, warning=FALSE}
+get_rep_center_vector <- function(cluster) {
+  ord <- order(cluster$size, decreasing = TRUE)
+  out <- cluster$centers[ord[1],]
+  return( as.vector(out) )
+}
+
+rep_center_matrix <- t( sapply(clusters, get_rep_center_vector ) )
+rownames(rep_center_matrix) <- building_names
+
+# Validación interna
+iv_rep_center <- clValid(rep_center_matrix, 2:10, clMethods=c("hierarchical", "kmeans", "pam"), validation="internal")
+os_rep_center <- optimalScores(iv_rep_center)
+
+```
+
+A continuación se muestran los resultados:
+
+``` {r echo=FALSE, warning=FALSE}
+os_rep_center
+```
+
+
+
+
+# Agrupación basada en atributos representativos
+
+Utilizando la técnica propuesta para encontrar el subconjunto de atributos mínimo sin pérdida de información se plantea sintetizar la información de un edificio. Para ello se ejecuta 30 veces de manera independiente el algoritmo para cada edificio, obteniendo 30 subconjuntos de atributos. A partir de estas soluciones se construye el histograma de frecuencia de aparición de cada atributo en las soluciones.
+
+``` {r echo=FALSE, warning=FALSE}
+# Establecemos el número máximo de edificios a cargar
+num_buildings <- 64
+# Variables para almacenar resultados de SSGA
+results_ssga <- list()
+
+setwd("/home/andu/Documentos/uma/PHD/papers/load-curve/results")
+for(s in 1:num_buildings) {
+  temp <- list()
+  for(n in 1:30) {
+    file <- paste(n,"results-ssga.RData",sep="-")
+    load(paste(s,file,sep="/"))
+    temp[[n]] <- results
+  }
+  results_ssga[[s]] <- temp
+}
+
+# limpiamos
+rm(results)
+rm(time_beginning)
+rm(time_end)
+rm(s)
+rm(n)
+rm(temp)
+
+# Definimos una función que dada una lista de soluciones (para un mismo edificio)
+# retorna una lista con la frecuencia de aparición de cada atributo
+get_freq <- function(list_results) {
+  matrix <- t( sapply(list_results, function(s){ s$best*1 }) )
+  freq <- colSums(matrix)
+  return(freq)
+}
+
+# Convertimos las soluciones en frecuencias
+freqs <-  t( sapply( results_ssga, get_freq ) )
+rownames(freqs) <- building_names
+```
+
+Por ejemplo, a continuación se muestra el histograma de frecuencia de los atributos escogidos para dos edificios en particular (*Centro de Salud Arroyo de la Miel* y *Museo Picasso*).
+
+``` {r echo=FALSE, warning=FALSE}
+list_hours <- colnames(raw_data)[!colnames(raw_data) %in% c("file_name","consumption_date")]
+list_hours <- sapply(list_hours, function(s) { substr(s, 2, nchar(s))})
+par(mfrow=c(1,2))
+barplot(freqs[16,], names.arg = list_hours,  xlab="Hour", ylab="Frequency", main="Healthcare Center", ylim=c(0,30))
+barplot(freqs[9,], names.arg = list_hours,  xlab="Hour", ylab="Frequency", main="Museum", ylim=c(0,30))
+```
+
+A continuación se muestra el perfil representativo y el histograma de frecuencia del edificio *Centro de Salud Arroyo de la Miel*.
+
+``` {r echo=FALSE, warning=FALSE}
+s1 <- 16
+s2 <- 57
+par(mfrow=c(2,2), oma = c(0, 0, 2, 0))
+barplot(freqs[s1,], names.arg = list_hours,  xlab="Hour", ylab="Frequency", ylim=c(0,30), main="Demand Footprint", cex.main=1)
+plot(1:length(rep_center_matrix[s1,]),rep_center_matrix[s1,], type="l", xlab="Hour", ylab="Load [kWh]", ylim=c(0,max(rep_center_matrix[s1,])*1.2), main="Typical Load", cex.main=1, xaxt="n")
+axis(side=1, at=1:96, labels=list_hours, tick=FALSE)
+
+barplot(freqs[s2,], names.arg = list_hours,  xlab="Hour", ylab="Frequency", ylim=c(0,30), main="Demand Footprint", cex.main=1)
+plot(1:length(rep_center_matrix[s2,]),rep_center_matrix[s2,], type="l", xlab="Hour", ylab="Load [kWh]", ylim=c(0,max(rep_center_matrix[s2,])*1.2), main="Typical Load", cex.main=1, xaxt="n")
+axis(side=1, at=1:96, labels=list_hours, tick=FALSE)
+
+mtext('Healthcare Center', outer = TRUE, cex = 1.2)
+mtext("Government Building", side = 3, line = -15, outer=TRUE, cex=1.2)
+```
+
+Utilizando los criterios previamente definidos buscamos el tamaño óptimo de agrupaciones. Los resultados obtenidos se muestran a continuación.
+
+``` {r echo=FALSE, warning=FALSE}
+
+# Validación interna 
+iv_freqs <- clValid(freqs, 2:10, clMethods=c("hierarchical", "kmeans",  "pam"), validation="internal")
+os_freqs <- optimalScores(iv_freqs)
+
+```
+
+``` {r echo=FALSE, warning=FALSE}
+os_freqs
+```
+
+
+
+# Comparación de resultados
+
+El método propuesto basado en el subconjunto de atributos presenta los mejores resultados según la métrica de **Dunn**. En cambio, el método propuesto de utilizar el 
+centro "representativo" obtiene el mejor resultado para las métricas **Connectiviy** y **Silhouette**.
+
+A continuación se muestran los dendogramas para las dos mejores propuestas. A simple vista se puede observar una gran diferencia en el balanceo entre el primero y el segundo dendograma. Por otra parte, es posible apreciar que el segundo dendograma (frecuencia de atributos) presenta una mejor agrupación en términos "semánticos", por ejemplo la mayoría de los hospitales se encuentran a poca distancia, lo cual también se verifica para los centros de salud, y para otros edificios de características similares.
+
+
+``` {r echo=FALSE, warning=FALSE}
+par(mfrow=c(1,1))
+hc_centers <- hclust(d=dist(rep_center_matrix))
+plot(hc_centers, hang = -1, ylab="Height", xlab="Building", main="Characteristic Typical Load Curve", sub="", cex=0.7)
+```
+
+``` {r echo=FALSE, warning=FALSE}
+hc_freqs <- hclust(d=dist(freqs))
+plot(hc_freqs, hang = -1, ylab="Height", xlab="Building", main="Demand Footprint", sub="", cex=0.7)
+```
+
+
+``` {r echo=FALSE, warning=FALSE, eval=FALSE}
+s1 <- 16
+par(mfrow=c(1,2))
+r <- 1
+smoothingSpline = smooth.spline(1:length(list_matrix_con[[s1]][r,]),list_matrix_con[[s1]][r,], spar=0.35)
+plot(smoothingSpline, type="l", xlab="Hour", ylab="Load [kWh]", ylim=c(0,max(list_matrix_con[[s1]])*1.2), main="Daily Loads", cex.main=1, xaxt="n", lwd=0.7)
+axis(side=1, at=1:96, labels=list_hours, tick=FALSE)
+for(r in 2:365) {
+  # lines(1:length(list_matrix_con[[s1]][r,]),list_matrix_con[[s1]][r,], type="l")
+  smoothingSpline = smooth.spline(1:length(list_matrix_con[[s1]][r,]),list_matrix_con[[s1]][r,], spar=0.35)
+  lines(smoothingSpline, type="l", lwd=0.7)
+}
+
+
+barplot(freqs[s1,], names.arg = list_hours,  xlab="Hour", ylab="Frequency", ylim=c(0,30), main="Demand Footprint", cex.main=1)
+
+```
+

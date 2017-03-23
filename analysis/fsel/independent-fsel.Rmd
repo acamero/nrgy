@@ -1,0 +1,146 @@
+---
+output: pdf_document
+---
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
+rm(list = ls())
+options(error=traceback)
+set.seed(1)
+library(scmamp)
+setwd("/home/andu/git/nrgy/analysis/fsel")
+```
+
+
+# Problema
+
+Sea $P_{d}=\{p_{1}, ..., p_{M}\}$ el  perfil de consumo observado para un edificio en el día $d$, donde $M$ es el número de observaciones diarias. Luego, definimos $B=\{P_{1},...,P_{L}\}$ como el conjunto de perfiles de consumo de un edificio, con $L$ el número de días registrados. Sea $K=\{k_{1},..., k_{L}\}$ la lista de pertenencia de cada perfil de consumo de $B$ a un conjunto, donde $k_{i}\in {1,..,G}$ es el grupo al que pertenece la observación $P_{i}$ y $G$ es el número de grupos. 
+
+Sea ahora $S=\{ s_{a},...,s_{z}\}$ una combinación de atributos, con $1 \leq a, z \leq M$. Dada una combinación de atributos o solución, definimos la funcion $clus(B, S) = \{c_{1}, ..., c_{L}\}$ que retorna el grupo al cual pertenece cada observación $P_{i} \in B$, donde ($c_{i} \in \{1,..,G\}$).
+
+Luego, definimos la función $irand(K, clus(B,S)) = I$ (con $I \in \mathbb{R}$ e $I \in [0..1]$) que retorna la medida del **índice Rand** (comparación externa de clusters) para ambas agrupaciones, donde 1 es similitud total. 
+
+Dada una solución $S$ de largo (cantidad de atributos que selecciona) igual a $||S||$, definimos la siguiente función de **fitness**:
+
+$$ fitness(S) = 0.8 * (irand(K, clus(B,S)))^{2} + 0.2 (1 - \frac{||S||}{M}) $$
+
+Nótese que se añade un factor asociado a la cantidad de atributos seleccionados, pretendiendo así favorecer soluciones que escojan un menor número de atributos. Por otra parte $fitness(S) \in [0..1]$.
+
+Ahora podemos definir el problema de encontrar el menor número de atributos con la menor pérdida de información, como encontrar la solución $S$ que maximiza el **fitness**.
+
+
+
+
+
+
+
+# Resultados
+
+Se cuenta con el consumo de electricidad medido con una periodicidad de 15 minutos durante un año para 64 edificios ($N=64$), es decir se cuenta con más de 2 millones de mediciones de consumo, y el objetivo consiste en seleccionar el conjunto mínimo de mediciones que permita realizar el análisis del consumo sin pérdida de información.
+
+Para cada edificio de manera independiente se realiza la agrupación de cada perfil de consumo (desde las 0:00 hasta las 23:59) utilizando **k-means**. Se define agrupar dichos perfiles de consumo en 3 categorías (i.e. $G=3$). De esta forma se obtienen las listas de pertenencia $K_{p}$, con $p \in \{1,...,N\}$. 
+
+
+
+``` {r echo=FALSE, warning=FALSE}
+# Establecemos el número máximo de edificios a cargar
+num_buildings <- 64
+# Variables para almacenar resultados de SSGA
+results_ssga <- list()
+times_ssga <- list()
+results_rand <- list()
+times_rand <- list()
+results_cfs <- list()
+times_cfs <- list()
+results_ig <- list()
+times_ig <- list()
+
+setwd("/home/andu/Documentos/uma/PHD/papers/load-curve/results")
+for(s in 1:num_buildings) {
+  # SSGA
+  load(paste(s,"1-results-ssga.RData",sep="/"))
+  results_ssga[[s]] <- results
+  times_ssga[[s]] <- list(beginning = time_beginning, end = time_end)
+  # Random
+  load(paste(s,"1-results-rand.RData",sep="/"))
+  results_rand[[s]] <- results
+  times_rand[[s]] <- list(beginning = time_beginning, end = time_end)
+  # Filter
+  load(paste(s,"1-results-filters.RData",sep="/"))
+  results_cfs[[s]] <- list( fitness= results$cfs_fitness, best=results$cfs_subset )
+  times_cfs[[s]] <- list(beginning = time_beg_cfs, end = time_end_cfs)
+  results_ig[[s]] <- list( fitness= results$ig_fitness, best=results$ig_subset )
+  times_ig[[s]] <- list(beginning = time_beg_ig, end = time_end_ig)
+}
+
+rm(results)
+rm(time_beginning)
+rm(time_end)
+rm(s)
+rm(time_beg_ig)
+rm(time_end_ig)
+rm(time_beg_cfs)
+rm(time_end_cfs)
+```
+
+Luego, utilizando un SSGA se realiza la búsqueda de la solución óptima $S$ para cada edificio de manera independiente. Además se realiza la selección del subconjunto de atributos óptimo utilizando dos técnicas de filtrado: **Information Gain** (IG) y **CFS** (medidas de correlación y entropía), y búsqueda aleatoria.
+
+``` {r echo=FALSE, warning=FALSE}
+# Fitness para cada edificio
+fitness_ssga <- sapply(1:length(results_ssga), function(s) { results_ssga[[s]]$best_fitness })
+fitness_rand <- sapply(1:length(results_rand), function(s) { results_rand[[s]]$fitness })
+fitness_ig <- sapply(1:length(results_ig), function(s) { results_ig[[s]]$fitness })
+fitness_cfs <- sapply(1:length(results_cfs), function(s) { results_cfs[[s]]$fitness })
+```
+
+A continuación se muestran los resultados estadísticos del fitness para el conjunto de todos los edificios (64) evaluados cada uno por separado. Para las siguientes medidas, salvo Sdev, valores más altos indican un mejor desempeño.
+
+|    | Mín | Máx | Media | Mediana | Sdev |
+| ------ | :------ | :------ | :------ | :------ | :------ |
+| SSGA | `r min(fitness_ssga)` | `r max(fitness_ssga)` | `r mean(fitness_ssga)` | `r median(fitness_ssga)` | `r sd(fitness_ssga)` |
+| Random | `r min(fitness_rand)` | `r max(fitness_rand)` | `r mean(fitness_rand)` | `r median(fitness_rand)` | `r sd(fitness_rand)` |
+| IG | `r min(fitness_ig)` | `r max(fitness_ig)` | `r mean(fitness_ig)` | `r median(fitness_ig)` | `r sd(fitness_ig)` |
+| CFS | `r min(fitness_cfs)` | `r max(fitness_cfs)` | `r mean(fitness_cfs)` | `r median(fitness_cfs)` | `r sd(fitness_cfs)` |
+
+``` {r echo=FALSE, warning=FALSE}
+# Tamaño de la solución
+size_ssga <- sapply(1:length(results_ssga), function(s) { results_ssga[[s]]$best_features_size })
+size_rand <- sapply(1:length(results_rand), function(s) { sum(results_rand[[s]]$individual*1) })
+size_ig <- sapply(1:length(results_ig), function(s) { length(results_ig[[s]]$best) })
+size_cfs <- sapply(1:length(results_cfs), function(s) { length(results_cfs[[s]]$best) })
+```
+
+A continuación se muestran las medidas estadísticas para el tamaño de las soluciones de cada método. El tamaño máximo posible de una solución es 96.
+
+|    | Mín | Máx | Media | Mediana | Sdev |
+| ------ | :------ | :------ | :------ | :------ | :------ |
+| SSGA | `r min(size_ssga)` | `r max(size_ssga)` | `r mean(size_ssga)` | `r median(size_ssga)` | `r sd(size_ssga)` |
+| Random | `r min(size_rand)` | `r max(size_rand)` | `r mean(size_rand)` | `r median(size_rand)` | `r sd(size_rand)` |
+| IG | `r min(size_ig)` | `r max(size_ig)` | `r mean(size_ig)` | `r median(size_ig)` | `r sd(size_ig)` |
+| CFS | `r min(size_cfs)` | `r max(size_cfs)` | `r mean(size_cfs)` | `r median(size_cfs)` | `r sd(size_cfs)` |
+
+
+
+
+
+``` {r echo=FALSE, warning=FALSE}
+fit_matrix <- matrix( c(fitness_ssga, fitness_rand, fitness_ig, fitness_cfs), ncol=4, dimnames = list(1:64,c("SSGA","RS","IG","CFS")))
+
+# Si p-value es menor al umbral definido, entonces se rechaza la hipótesis nula (todos los algoritmos se comportan igual)
+f_a_t <- friedmanAlignedRanksTest(fit_matrix)
+
+#raw_p <- friedmanPost(fit_matrix)
+#adjustHolland(raw_p)
+#friedmanAlignedRanksPost(fit_matrix)
+pv_matrix <- friedmanAlignedRanksPost(fit_matrix, control=1)
+pv_adj <- adjustHolland(pv_matrix)
+```
+
+El p-value para el test de Friedman Alineado es igual a `r format(f_a_t$p.value, digits=3)`, por lo que se rechaza la hipótesis nula, lo que implica que los algoritmos se comportan de manera distinta.
+
+Ahora comparamos los resultados de cada algoritmo, utilizando como control los valores obtenidos por el SSGA.
+
+| Comparación | p-value |
+| :---------- | ------: |
+| SSGA vs RS  | `r format(pv_adj[2], digits=3)` |
+| SSGA vs IG  | `r format(pv_adj[3], digits=3)` |
+| SSGA vs CFS | `r format(pv_adj[4], digits=3)` |
+

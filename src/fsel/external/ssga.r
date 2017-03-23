@@ -3,8 +3,8 @@ library(clusterCrit)
 # Dado un conjunto de variables y observaciones, se realiza la agrupación (k-means) de 
 # las observaciones
 get_clusters <- function( l_matrix, num_clusters ) {
-  temp_clusters <- lapply(l_matrix, function(temp) {
-    kc <- kmeans(temp, num_clusters, 30, 10)
+  temp_clusters <- lapply(1:length(l_matrix), function(i) {
+    kc <- kmeans(l_matrix[[i]], num_clusters[[i]], 30, 10)
     as.integer(kc$cluster)
   })
   return(temp_clusters)
@@ -110,7 +110,7 @@ ga_cluster_similarity <- function(num_genes, pop_size, prob_mutation, prob_cross
     sds <- c( sds, sd(fitness_pop))
   }
   # retornamos los valores
-  return( list( best = pop[which(fitness_pop == max(fitness_pop))[1],], best_fitness = max(fitness_pop), best_features_size = sum(pop[which(fitness_pop == max(fitness_pop))[1],]*1), max_gen = maxs, median_gen = medians, sd_gen = sds) )
+  return( list( best = pop[which(fitness_pop == max(fitness_pop))[1],], best_fitness = max(fitness_pop), best_features_size = sum(pop[which(fitness_pop == max(fitness_pop))[1],]*1), max_gen = maxs, median_gen = medians, sd_gen = sds, num_clusters = num_clusters) )
 }
 
 data_2_lmat <- function(data, metadata) {
