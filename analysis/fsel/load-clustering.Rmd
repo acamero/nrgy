@@ -216,7 +216,17 @@ for(r in 2:365) {
 }
 
 
+
 barplot(freqs[s1,], names.arg = list_hours,  xlab="Hour", ylab="Frequency", ylim=c(0,30), main="Demand Footprint", cex.main=1)
+
+
+plot(clusters[[s1]]$centers[2,], type="l", xlab="Hour", ylab="Load [kWh]", ylim=c(0,max(list_matrix_con[[s1]])*1.2), main="Characteristic Daily Loads", cex.main=1, xaxt="n", lwd=0.7)
+axis(side=1, at=1:96, labels=list_hours, tick=FALSE)
+lines(clusters[[s1]]$centers[1,], type="l", lwd=0.7)
+
+mins <- sapply(1:30, function(r) min(list_matrix_con[[s1]][r,]) )
+plot(mins, ylim=c(0,5), xlab="Day", ylab="kWh")
+lines(rep(mean(mins), length(mins)), type="l")
 
 ```
 
