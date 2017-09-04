@@ -10,6 +10,8 @@ library(kohonen)
 library(MASS)
 library(class)
 #library(NbClust)
+
+
 ```
 
 
@@ -29,7 +31,7 @@ data_2_lmat <- function(data, metadata) {
 }
 
 # Cargamos los datos de consumo
-setwd("/home/andu/Documentos/uma/PHD/papers/load-curve/results")
+setwd("/home/andu/Documentos/uma/PHD/papers/demand-footprint/results")
 raw_data <- read.table("data.txt",sep="\t")
 raw_meta <- read.table("meta.txt", sep="\t", encoding = "latin1")
 building_names <- paste( toupper(substr(raw_meta$name, 1,1)), tolower(substr(raw_meta$name, 2,20)), sep="")
@@ -191,12 +193,48 @@ A continuación se muestran los dendogramas para las dos mejores propuestas. A s
 
 
 ``` {r echo=FALSE, warning=FALSE}
+sic_codes <- c(4, 9, 9, 8, 6, 1, 1, 3, 8, 8
+,4, 9, 9, 6, 4, 8, 8, 8, 8, 8
+,9, 8, 8, 4, 8, 8, 8, 8, 8, 8
+,8, 8, 8, 8, 8, 8, 8, 8, 8, 8
+,4, 8, 8, 8, 3, 9, 1, 1, 8, 9
+,8, 8, 8, 4, 4, 8, 9, 8, 8, 8
+,8, 9, 8, 6)
+
+sic_codes[sic_codes==8] <- c(82, 84, 87, 80, 70, 87, 87, 79, 80, 82, 
+86, 86, 87, 87, 80, 80, 87, 89, 89, 80, 
+89, 89, 89, 89, 73, 89, 84, 84, 86, 79, 
+89, 73, 80, 80, 80, 80, 80, 82, 80)
+
+divisions <- as.data.frame(matrix( c(1,"Agriculture, Forestry and Fishing", 2,"Mining", 3,"Construction", 4,"Manufacturing", 5,"Transportation, Communications, Electric, Gas and Sanitary service", 6, "Wholesale Trade", 16,"Retail Trade", 7,"Finance, Insurance and Real Estate", 8,"Services", 9,"Public Administration", 10, "Nonclassifiable"), ncol=2, byrow=TRUE))
+colnames(divisions) <- c("key","desc")
+
+categories <- as.data.frame( matrix( c(70, "Hotels, Rooming Houses, Camps, and Other Lodging Services"
+,73, "Business Services"
+,79, "Amusement and Recreation Services"
+,80, "Health Services"
+,82, "Educational Services"
+,84, "Museums, Art Galleries, and Botanical and Zoological Gardens"
+,86, "Membership Organizations"
+,87, "Engineering, Accounting, Research, Management, and Related Services"
+,89, "Miscellaneous Services"), ncol=2, byrow=TRUE) )
+colnames(categories) <- c("key", "desc")
+
+descs <- rbind(divisions, categories)
+sic_codes <- as.data.frame(sic_codes)
+sic_codes$order <- 1:nrow(sic_codes)
+sic_descs <- merge(sic_codes, descs, by.x="sic_codes", by.y="key", sort=TRUE)
+rownames(rep_center_matrix) <- substr(sic_descs[order(sic_descs$order),"desc"], 1, 18)
+
+
 par(mfrow=c(1,1))
 hc_centers <- hclust(d=dist(rep_center_matrix))
 plot(hc_centers, hang = -1, ylab="Height", xlab="Building", main="Characteristic Typical Load Curve", sub="", cex=0.7)
 ```
 
 ``` {r echo=FALSE, warning=FALSE}
+rownames(freqs) <- substr(sic_descs[order(sic_descs$order),"desc"], 1, 18)
+
 hc_freqs <- hclust(d=dist(freqs))
 plot(hc_freqs, hang = -1, ylab="Height", xlab="Building", main="Demand Footprint", sub="", cex=0.7)
 ```
@@ -228,5 +266,24 @@ mins <- sapply(1:30, function(r) min(list_matrix_con[[s1]][r,]) )
 plot(mins, ylim=c(0,5), xlab="Day", ylab="kWh")
 lines(rep(mean(mins), length(mins)), type="l")
 
+
 ```
 
+``` {r echo=FALSE, warning=FALSE, eval=FALSE}
+#plot(iv_freqs)
+par(mfrow=c(1,3), oma=c(3,1,1,1))
+plot(iv_freqs, main="", legend=FALSE, pch=c(1,2,3))
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+plot(0, 0, type = "n", bty = "n", xaxt = "n", yaxt = "n")
+legend("top", legend=c("Hierarchical","k-means","PAM"), horiz=TRUE, bty="n", lty=c(1,2,3), pch=c(1,2,3),col=c("black","red","green"), cex=1.2)
+
+
+par(mfrow=c(1,3), oma=c(3,1,1,1))
+plot(iv_rep_center, main="", legend=FALSE, pch=c(1,2,3))
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+plot(0, 0, type = "n", bty = "n", xaxt = "n", yaxt = "n")
+legend("top", legend=c("Hierarchical","k-means","PAM"), horiz=TRUE, bty="n", lty=c(1,2,3), pch=c(1,2,3),col=c("black","red","green"), cex=1.2)
+
+
+
+```
