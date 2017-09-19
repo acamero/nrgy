@@ -8,6 +8,10 @@ from def_config import *
 from data_wrapper import DataSet
 
 
+DEF_INTRA_THREADS = 0 # Number of threads per individual Op (0 means that the system picks an appropriate number).
+DEF_INTER_THREADS = 0 # Number of threads for blocking nodes (0 means that the system picks an appropriate number).
+
+
 # Graph generation
 def build_lstm_graph_with_config(config):
     tf.reset_default_graph()
@@ -97,7 +101,10 @@ def train_lstm_graph(dataset, lstm_graph, config, experiment, predicts=False):
     # Uncomment to print tensors
     # [print(n.name) for n in lstm_graph.as_graph_def().node]  
     learning_rates_to_use = _compute_learning_rates(config, experiment)
-    with tf.Session(graph=lstm_graph) as sess:
+    with tf.Session(graph=lstm_graph, 
+                    config=tf.ConfigProto(
+                        inter_op_parallelism_threads=DEF_INTER_THREADS, 
+                        intra_op_parallelism_threads=DEF_INTRA_THREADS) ) as sess:
         merged_summary = tf.summary.merge_all()
         writer = tf.summary.FileWriter(LOG_DIR + '/' + graph_name, sess.graph)
         writer.add_graph(sess.graph)

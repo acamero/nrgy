@@ -3,6 +3,7 @@ import array
 import numpy as np
 import random
 import tensorflow as tf
+import pandas
 from util.def_config import *
 from util.data_generation import generate_data
 from util.simple_rnn import evaluate
@@ -18,10 +19,12 @@ from util.simple_rnn import evaluate
 #}
 from deap import creator, base, tools, algorithms
 
+
+
 # TODO parameters!
 # lstm_size, num_layers, keep_prob, input_size, num_steps
-RANGES = [(1,1024), (1,1024), (1,100), (1,1024), (1,1024)]
-
+RANGES = [(1,128), (1,128), (1,100), (1,128), (1,128)]
+# If lstm_size=128, num_layers=128, input_size=128 and num_steps=128, then the number of variables is equal to 16,859,264
 
 #########################################################################################################################
 # Fitness cache. If an individual has been evaluated, the fitness is returned.
@@ -106,20 +109,29 @@ def init_problem(individual_ranges, fos=[-1.0, -1.0]):
 
 #########################################################################################################################
 
-def main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.1, expt=DEFAULT_EXPERIMENT):
+def main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.2, expt=DEFAULT_EXPERIMENT, file_name='opt-nsga2-out.csv'):
     global experiment 
     experiment = expt
     np.random.seed(seed)
     tf.set_random_seed(seed)
     random.seed(seed)
-    # initialize the problem using default objetives
+    # Initialize the problem using default objetives
     toolbox = init_problem(RANGES)
+    # Initialize statistics
+    stats = tools.Statistics(key=lambda ind: ind.fitness.values)
+    stats.register("avg", np.mean, axis=0)
+    stats.register("med", np.median, axis=0)
+    stats.register("std", np.std, axis=0)
+    stats.register("min", np.min, axis=0)
+    stats.register("max", np.max, axis=0)
+    # Initialize the logger
+    logbook = tools.Logbook()
+    # Initialize population
     pop = toolbox.population(n=pop_size)
     # Evaluate the entire population
     fitnesses = list(map(toolbox.evaluate, pop))
     for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
-        print( ind, fit)
     # Begin the evolution
     for g in range(NGEN):
         print("-- Generation %i --" % g)
@@ -153,21 +165,27 @@ def main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.1, ex
             pop[:] = toolbox.kbest(pop, pop_size-offspring_size) + offspring
         else:
             pop[:] = toolbox.kbest(pop, pop_size-1) + toolbox.select(offspring, 1)
+        # Gather the stats
+        record = stats.compile(pop)
+        print(record)
+        logbook.record(gen=g, **record)
         # Gather all the fitnesses in one list and print the stats
-        for ind in pop:
-            print(ind, ind.fitness.values)
-        fits = [ind.fitness.values for ind in pop]
-        _mean = np.mean(fits, axis=0)
-        _median = np.median(fits, axis=0)
-        _min = np.min(fits, axis=0)
-        _max = np.max(fits, axis=0)
-        _std = np.std(fits, axis=0)
-        print("  Min %s" % _min)
-        print("  Max %s" % _max)
-        print("  Avg %s" % _mean)
-        print("  Med %s" % _median)
-        print("  Std %s" % _std)
-
+        #for ind in pop:
+        #    print(ind, ind.fitness.values)
+        #fits = [ind.fitness.values for ind in pop]
+        #_mean = np.mean(fits, axis=0)
+        #_median = np.median(fits, axis=0)
+        #_min = np.min(fits, axis=0)
+        #_max = np.max(fits, axis=0)
+        #_std = np.std(fits, axis=0)
+        #print("  Min %s" % _min)
+        #print("  Max %s" % _max)
+        #print("  Avg %s" % _mean)
+        #print("  Med %s" % _median)
+        #print("  Std %s" % _std)
+    # for
+    df = pandas.DataFrame(data=logbook)
+    df.to_csv(file_name, sep=';', encoding='utf-8')
 
 
 #########################################################################################################################
