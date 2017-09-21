@@ -4,6 +4,7 @@ import numpy as np
 import random
 import tensorflow as tf
 import pandas
+import json
 from util.def_config import *
 from util.data_generation import generate_data
 from util.simple_rnn import evaluate
@@ -20,13 +21,16 @@ from util.simple_rnn import evaluate
 from deap import creator, base, tools, algorithms
 
 
-
+CACHE_FILE = 'cache.json'
 # TODO parameters!
 # lstm_size, num_layers, keep_prob, input_size, num_steps
-RANGES = [(1,128), (1,128), (1,100), (1,128), (1,128)]
-# If lstm_size=128, num_layers=128, input_size=128 and num_steps=128, then the number of variables is equal to 16,859,264
+#RANGES = [(1,129), (1,129), (1,100), (1,129), (1,129)]
+RANGES = [(1,33), (1,33), (1,100), (1,33), (1,129)]
+# If lstm_size=128, num_layers=128 and input_size=128, then the number of variables is equal to 16,859,264
+# If lstm_size=32, num_layers=32 and input_size=32, then the number of variables is equal to 267,296
 
-#########################################################################################################################
+
+########################################################################################################################
 # Fitness cache. If an individual has been evaluated, the fitness is returned.
 _CACHE = {}
 def upsert_cache(config, fitness):
@@ -36,6 +40,26 @@ def upsert_cache(config, fitness):
     elif str(config) in _CACHE:
         return _CACHE[str(config)]
     return None
+
+def _cache_to_csv(filename):
+    dj = json.dumps(_CACHE)
+    try:
+        with open(filename,'w') as f:
+            f.write(dj)
+        f.close()
+    except IOError:
+        print('Unable to store the cache')
+
+def _load_cache(filename):
+    _cache = {}
+    try:
+        with open(filename, 'r') as f:
+            f_str = f.read()
+            _CACHE = json.loads(f_str)
+            print(str(len(_CACHE)) + ' entries loaded into the cache memory')
+    except IOError:
+        print('Unable to load the cache')
+
 
 #########################################################################################################################
 
@@ -79,14 +103,14 @@ def evaluate_individual(individual):
     config = decode_individual(individual)
     fitness = upsert_cache(config, None)
     #print("Fitness from cache:",fitness)
+    print("Evaluate", str(config))
     if not fitness:
-        #print("Evaluate", str(config))
         dataset = generate_data(config, experiment)
         loss, no_vars = evaluate(dataset, config, experiment, predicts=False)
         fitness = [loss, no_vars]
-        #fitness = [np.random.rand(), np.random.rand()]
+        fitness = [np.random.rand(), np.random.rand()]
         upsert_cache(config, fitness)
-    print("Configuration", str(config), "Fitness", fitness)  
+    print("Fitness", fitness)  
     return fitness
 
 #########################################################################################################################
@@ -132,6 +156,10 @@ def main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.2, ex
     fitnesses = list(map(toolbox.evaluate, pop))
     for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
+    # Gather the stats
+    record = stats.compile(pop)
+    print(record)
+    logbook.record(**record)
     # Begin the evolution
     for g in range(NGEN):
         print("-- Generation %i --" % g)
@@ -168,28 +196,17 @@ def main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.2, ex
         # Gather the stats
         record = stats.compile(pop)
         print(record)
-        logbook.record(gen=g, **record)
-        # Gather all the fitnesses in one list and print the stats
-        #for ind in pop:
-        #    print(ind, ind.fitness.values)
-        #fits = [ind.fitness.values for ind in pop]
-        #_mean = np.mean(fits, axis=0)
-        #_median = np.median(fits, axis=0)
-        #_min = np.min(fits, axis=0)
-        #_max = np.max(fits, axis=0)
-        #_std = np.std(fits, axis=0)
-        #print("  Min %s" % _min)
-        #print("  Max %s" % _max)
-        #print("  Avg %s" % _mean)
-        #print("  Med %s" % _median)
-        #print("  Std %s" % _std)
+        logbook.record(**record)
     # for
     df = pandas.DataFrame(data=logbook)
     df.to_csv(file_name, sep=';', encoding='utf-8')
+    
 
 
 #########################################################################################################################
 
 if __name__ == '__main__':
-    main()
+    _load_cache(CACHE_FILE)
+    main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.2, expt=DEFAULT_EXPERIMENT, file_name='opt-nsga2-out.csv')
+    _cache_to_csv(CACHE_FILE)
 
