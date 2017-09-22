@@ -23,11 +23,20 @@ from deap import creator, base, tools, algorithms
 
 CACHE_FILE = 'cache.json'
 # TODO parameters!
-# lstm_size, num_layers, keep_prob, input_size, num_steps
-#RANGES = [(1,129), (1,129), (1,100), (1,129), (1,129)]
-RANGES = [(1,33), (1,33), (1,100), (1,33), (1,129)]
-# If lstm_size=128, num_layers=128 and input_size=128, then the number of variables is equal to 16,859,264
-# If lstm_size=32, num_layers=32 and input_size=32, then the number of variables is equal to 267,296
+# RANGES:
+#     0. lstm_size (number of cells per layer), 
+#     1. num_layers (hidden layers), 
+#     2. keep_prob (drop out probability), 
+#     3. num_steps (number of times back)
+#
+# Note: 'keep_prob' and 'num_steps' do not impact on the number of trainable variables
+#
+# If lstm_size=128 and num_layers=128 => 16,777,857 trainable variables (considering input_size=1)
+#RANGES = [(1,129), (1,129), (1,101), (1,129)]
+# If lstm_size=32 and num_layers=32 => 262,305 trainable variables (considering input_size=1)
+#RANGES = [(1,33), (1,33), (1,101), (1,33)]
+# If lstm_size=16 and num_layers=16 => 32,849 trainable variables (considering input_size=1)
+RANGES = [(1,17), (1,17), (1,101), (1,17)]
 
 
 ########################################################################################################################
@@ -69,8 +78,7 @@ def decode_individual(individual):
     config.lstm_size = individual[0]
     config.num_layers = individual[1]
     config.keep_prob = float(individual[2]/100)
-    config.input_size = individual[3]
-    config.num_steps = individual[4]
+    config.num_steps = individual[3]
     return config
 
 # Initialize an individual using int encoding and [low,high) ranges
@@ -78,9 +86,10 @@ def init_individual(clazz, ranges):
     return clazz(np.random.randint(*p) for p in ranges)
 
 # Calculate the std from the width of the ranges
-def _std_from_ranges(ranges):
-    # TODO improve
-    return [(r[1]-r[0])*.01 for r in ranges]
+def _std_from_ranges(ranges, factor=0.01):
+    if factor <= 0:
+        return [1 for _ in ranges]
+    return [(r[1]-r[0])*factor for r in ranges]
 
 
 # Gaussian mutation
