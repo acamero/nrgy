@@ -52,17 +52,19 @@ def upsert_cache(config, fitness):
     return None
 
 def _cache_to_csv(filename):
-    dj = json.dumps(_CACHE)
+    dj = json.dumps(_CACHE).encode('utf-8')
     try:
         with open(filename,'w') as f:
             f.write(dj)
         f.close()
+        print(str(len(_CACHE)) + ' cache entries saved')
     except IOError:
         print('Unable to store the cache')
 
 def _load_cache(filename):
     try:
         with open(filename, 'r') as f:
+            global _CACHE
             f_str = f.read()
             _CACHE = json.loads(f_str)
             print(str(len(_CACHE)) + ' entries loaded into the cache memory')
@@ -214,11 +216,17 @@ def main(seed, pop_size, offspring_size, NEV, CXPB, MUTPB, expt, file_name, std_
         evals = evals + offspring_size
         g += 1
         logbook.record(evaluations=evals, gen=g, **record)
-        # Make cache persistent
-        _cache_to_csv(CACHE_FILE)
     # for
     df = pandas.DataFrame(data=logbook)
     df.to_csv(file_name, sep=';', encoding='utf-8')
+    solution = toolbox.kbest(pop,1)
+    print( solution )
+    try:
+        with open('sol-'+file_name,'w') as f:
+            f.write(str(solution))
+        f.close()
+    except IOError:
+        print('Unable to store the cache')
     
 
 
