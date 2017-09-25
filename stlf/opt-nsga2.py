@@ -5,6 +5,7 @@ import random
 import tensorflow as tf
 import pandas
 import json
+import argparse
 from util.def_config import *
 from util.data_generation import generate_data
 from util.simple_rnn import evaluate
@@ -60,12 +61,12 @@ def _cache_to_csv(filename):
         print('Unable to store the cache')
 
 def _load_cache(filename):
-    _cache = {}
     try:
         with open(filename, 'r') as f:
             f_str = f.read()
             _CACHE = json.loads(f_str)
             print(str(len(_CACHE)) + ' entries loaded into the cache memory')
+        f.close()
     except IOError:
         print('Unable to load the cache')
 
@@ -116,8 +117,8 @@ def evaluate_individual(individual):
     if not fitness:
         dataset = generate_data(config, experiment)
         loss, no_vars = evaluate(dataset, config, experiment, predicts=False)
-        fitness = [loss, no_vars]
-        fitness = [np.random.rand(), np.random.rand()]
+        fitness = [float(loss), float(no_vars)]
+        #fitness = [np.random.rand(), np.random.rand()]
         upsert_cache(config, fitness)
     print("Fitness", fitness)  
     return fitness
@@ -125,7 +126,7 @@ def evaluate_individual(individual):
 #########################################################################################################################
 
 # By default 2 objectives (FO-1: minimize training error, FO-2: minimize the number of training variables)
-def init_problem(individual_ranges, fos=[-1.0, -1.0]):
+def init_problem(individual_ranges, std_factor, fos=[-1.0, -1.0]):
     creator.create("FitnessMulti", base.Fitness, weights=fos)
     creator.create("Individual", list, fitness=creator.FitnessMulti)
     toolbox = base.Toolbox()
@@ -133,7 +134,7 @@ def init_problem(individual_ranges, fos=[-1.0, -1.0]):
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
     toolbox.register("evaluate", evaluate_individual)
     toolbox.register("mate", tools.cxOnePoint)
-    toolbox.register("mutate", gaussian_mutation, ranges=individual_ranges, stds=_std_from_ranges(individual_ranges))
+    toolbox.register("mutate", gaussian_mutation, ranges=individual_ranges, stds=_std_from_ranges(individual_ranges, std_factor))
     toolbox.register("select", tools.selNSGA2)
     # Version 1.1 toolbox.register("select", tools.selNSGA2, nd='standard')
     toolbox.register("kbest", tools.selBest)
@@ -142,14 +143,17 @@ def init_problem(individual_ranges, fos=[-1.0, -1.0]):
 
 #########################################################################################################################
 
-def main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.2, expt=DEFAULT_EXPERIMENT, file_name='opt-nsga2-out.csv'):
+def main(seed, pop_size, offspring_size, NEV, CXPB, MUTPB, expt, file_name, std_factor):
+    print("seed", seed, "pop_size", pop_size, "offspring", offspring_size,
+            "NEV", NEV, "CXPB", CXPB, "MUTPB", MUTPB, "expt", str(expt), 
+            "file_name", file_name, "std_factor", std_factor)
     global experiment 
     experiment = expt
     np.random.seed(seed)
     tf.set_random_seed(seed)
     random.seed(seed)
     # Initialize the problem using default objetives
-    toolbox = init_problem(RANGES)
+    toolbox = init_problem(RANGES, std_factor)
     # Initialize statistics
     stats = tools.Statistics(key=lambda ind: ind.fitness.values)
     stats.register("avg", np.mean, axis=0)
@@ -168,9 +172,11 @@ def main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.2, ex
     # Gather the stats
     record = stats.compile(pop)
     print(record)
-    logbook.record(**record)
+    evals = pop_size
+    logbook.record(evaluations=evals, gen=0, **record)
+    g = 1
     # Begin the evolution
-    for g in range(NGEN):
+    while evals < NEV:
         print("-- Generation %i --" % g)
         # Select the next generation individuals
         if offspring_size > 1:
@@ -186,6 +192,9 @@ def main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.2, ex
                 del child1.fitness.values
                 del child2.fitness.values
         # for
+        if offspring_size == 1:  
+            offspring = [offspring[0]]
+        #
         for mutant in offspring:
             if np.random.rand() < MUTPB:
                 toolbox.mutate(mutant)
@@ -198,14 +207,15 @@ def main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.2, ex
             ind.fitness.values = fit
         # for
         # Replacement
-        if offspring_size > 1:
-            pop[:] = toolbox.kbest(pop, pop_size-offspring_size) + offspring
-        else:
-            pop[:] = toolbox.kbest(pop, pop_size-1) + toolbox.select(offspring, 1)
+        pop[:] = toolbox.kbest(pop, pop_size-offspring_size) + offspring
         # Gather the stats
         record = stats.compile(pop)
         print(record)
-        logbook.record(**record)
+        evals = evals + offspring_size
+        g += 1
+        logbook.record(evaluations=evals, gen=g, **record)
+        # Make cache persistent
+        _cache_to_csv(CACHE_FILE)
     # for
     df = pandas.DataFrame(data=logbook)
     df.to_csv(file_name, sep=';', encoding='utf-8')
@@ -215,7 +225,61 @@ def main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.2, ex
 #########################################################################################################################
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+          '--seed',
+          type=int,
+          default=1,
+          help='Random seed.'
+    )
+    parser.add_argument(
+          '--popsize',
+          type=int,
+          default=5,
+          help='Random seed.'
+    )
+    parser.add_argument(
+          '--offspring',
+          type=int,
+          default=2,
+          help='Random seed.'
+    )
+    parser.add_argument(
+          '--nev',
+          type=int,
+          default=10,
+          help='Number of evaluations.'
+    )
+    parser.add_argument(
+          '--cxpb',
+          type=float,
+          default=0.8,
+          help='Crossover probability.'
+    )
+    parser.add_argument(
+          '--mutpb',
+          type=float,
+          default=0.25,
+          help='Mutation probability.'
+    )
+    parser.add_argument(
+          '--stdf',
+          type=float,
+          default=0.01,
+          help='Mutation adjustment factor.'
+    )
+    parser.add_argument(
+          '--outf',
+          type=str,
+          default='out.csv',
+          help='Output file (csv).'
+    )
+
+    FLAGS, unparsed = parser.parse_known_args()
+
     _load_cache(CACHE_FILE)
-    main(seed=1, pop_size=5, offspring_size=1, NGEN = 2, CXPB=0.8, MUTPB=0.2, expt=DEFAULT_EXPERIMENT, file_name='opt-nsga2-out.csv')
+    main(seed=FLAGS.seed, pop_size=FLAGS.popsize, offspring_size=FLAGS.offspring, 
+                NEV=FLAGS.nev, CXPB=FLAGS.cxpb, MUTPB=FLAGS.mutpb, 
+                expt=DEFAULT_EXPERIMENT, file_name=FLAGS.outf, std_factor=FLAGS.stdf)
     _cache_to_csv(CACHE_FILE)
 
