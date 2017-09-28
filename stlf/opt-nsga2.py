@@ -27,7 +27,7 @@ CACHE_FILE = 'cache.json'
 # RANGES:
 #     0. lstm_size (number of cells per layer), 
 #     1. num_layers (hidden layers), 
-#     2. keep_prob (drop out probability), 
+#     2. keep_prob (keep probability), 
 #     3. num_steps (number of times back)
 #
 # Note: 'keep_prob' and 'num_steps' do not impact on the number of trainable variables
@@ -138,6 +138,7 @@ def init_problem(individual_ranges, std_factor, fos=[-1.0, -1.0]):
     toolbox.register("mate", tools.cxOnePoint)
     toolbox.register("mutate", gaussian_mutation, ranges=individual_ranges, stds=_std_from_ranges(individual_ranges, std_factor))
     toolbox.register("select", tools.selNSGA2)
+    #toolbox.register("select", tools.selTournament, tournsize=3)
     # Version 1.1 toolbox.register("select", tools.selNSGA2, nd='standard')
     toolbox.register("kbest", tools.selBest)
     # Version 1.1 toolbox.register("kbest", tools.selBest, fit_attr='fitness')
@@ -219,11 +220,12 @@ def main(seed, pop_size, offspring_size, NEV, CXPB, MUTPB, expt, file_name, std_
     # for
     df = pandas.DataFrame(data=logbook)
     df.to_csv(file_name, sep=';', encoding='utf-8')
-    solution = toolbox.kbest(pop,1)
-    print( solution )
+    solutions = toolbox.kbest(pop,1)
     try:
         with open('sol-'+file_name,'w') as f:
-            f.write(str(solution))
+            for sol in solutions:
+                f.write('config=' + str(sol) + ', fitness=' + str(sol.fitness.values))
+                print('config=' + str(sol) + ', fitness=' + str(sol.fitness.values))
         f.close()
     except IOError:
         print('Unable to store the cache')
