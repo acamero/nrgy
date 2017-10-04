@@ -284,12 +284,28 @@ if __name__ == '__main__':
           default='out.csv',
           help='Output file (csv).'
     )
+    parser.add_argument(
+          '--func',
+          type=str,
+          default='',
+          help='Target function.'
+    )
 
     FLAGS, unparsed = parser.parse_known_args()
 
+    experiment = DEFAULT_EXPERIMENT
+    if FLAGS.func != '':
+        if FLAGS.func.count('.') > 0:
+            module_name = FLAGS.func[0:FLAGS.func.rfind('.')]
+            func_name = FLAGS.func[FLAGS.func.rfind('.')+1:]
+            experiment.data_function = getattr( __import__(module_name), func_name )
+        else:
+            experiment.data_function = locals()[FLAGS.func]
+        print("Funcion name: " + experiment.data_function.__name__)   
+    #
     _load_cache(CACHE_FILE)
     main(seed=FLAGS.seed, pop_size=FLAGS.popsize, offspring_size=FLAGS.offspring, 
                 NEV=FLAGS.nev, CXPB=FLAGS.cxpb, MUTPB=FLAGS.mutpb, 
-                expt=DEFAULT_EXPERIMENT, file_name=FLAGS.outf, std_factor=FLAGS.stdf)
+                expt=experiment, file_name=FLAGS.outf, std_factor=FLAGS.stdf)
     _cache_to_csv(CACHE_FILE)
 

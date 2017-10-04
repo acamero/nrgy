@@ -11,8 +11,8 @@ class DataSet(object):
     self._prepare_data(seq)
 
   def _prepare_data(self, seq):
-    seq = [np.array(seq[i * self.input_size: (i + 1) * self.input_size])
-               for i in range(len(seq) // self.input_size)]
+    #seq = [np.array(seq[i * self.input_size: (i + 1) * self.input_size])
+    #           for i in range(len(seq) // self.input_size)]
     # split into groups of num_steps
     X = np.array([seq[i: i + self.num_steps] for i in range(len(seq) - self.num_steps)])
     y = np.array([seq[i + self.num_steps] for i in range(len(seq) - self.num_steps)])
