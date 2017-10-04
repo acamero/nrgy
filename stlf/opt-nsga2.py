@@ -290,6 +290,12 @@ if __name__ == '__main__':
           default='',
           help='Target function.'
     )
+    parser.add_argument(
+          '--mirror',
+          default=False,
+          help='If true, use negative and positive values to obtain the sequence.',
+          action='store_true'
+    )
 
     FLAGS, unparsed = parser.parse_known_args()
 
@@ -303,6 +309,8 @@ if __name__ == '__main__':
             experiment.data_function = locals()[FLAGS.func]
         print("Funcion name: " + experiment.data_function.__name__)   
     #
+    if FLAGS.mirror:
+        experiment.seq_mirror = 1
     _load_cache(CACHE_FILE)
     main(seed=FLAGS.seed, pop_size=FLAGS.popsize, offspring_size=FLAGS.offspring, 
                 NEV=FLAGS.nev, CXPB=FLAGS.cxpb, MUTPB=FLAGS.mutpb, 

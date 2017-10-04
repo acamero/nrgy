@@ -26,6 +26,7 @@ class Experiment(object):
     self.max_epoch = 100
     self.batch_size = 100
     self.seq_length = 10000
+    self.seq_mirror = None
     self.test_ratio = 0.2
   def __str__(self):
     return str(self.__dict__)
