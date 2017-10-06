@@ -76,12 +76,13 @@ def _load_cache(filename):
 #########################################################################################################################
 
 # Convert an individual into a NN configuration
-def decode_individual(individual):
+def decode_individual(individual):    
     config = Config()
     config.lstm_size = individual[0]
     config.num_layers = individual[1]
     config.keep_prob = float(individual[2]/100)
     config.num_steps = individual[3]
+    config.input_size = experiment.dimensions
     return config
 
 # Initialize an individual using int encoding and [low,high) ranges

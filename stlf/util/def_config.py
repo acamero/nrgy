@@ -23,6 +23,8 @@ class Experiment(object):
     def __init__(self):
         self.data_name = 'sin'
         self.data_function = np.sin
+        self.dimensions = 1
+        self.additional_data = 0
         self.init_epoch = 1
         self.max_epoch = 100
         self.batch_size = 100
