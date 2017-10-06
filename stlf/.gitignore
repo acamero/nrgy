@@ -1,5 +1,5 @@
 *.csv
-*.json
+cache.json
 _logs/
 _models/
 _predicts/

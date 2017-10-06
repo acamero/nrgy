@@ -285,32 +285,18 @@ if __name__ == '__main__':
           help='Output file (csv).'
     )
     parser.add_argument(
-          '--func',
+          '--experiment',
           type=str,
           default='',
-          help='Target function.'
-    )
-    parser.add_argument(
-          '--mirror',
-          default=False,
-          help='If true, use negative and positive values to obtain the sequence.',
-          action='store_true'
+          help='Experiment configuration file path (json format).'
     )
 
     FLAGS, unparsed = parser.parse_known_args()
 
     experiment = DEFAULT_EXPERIMENT
-    if FLAGS.func != '':
-        if FLAGS.func.count('.') > 0:
-            module_name = FLAGS.func[0:FLAGS.func.rfind('.')]
-            func_name = FLAGS.func[FLAGS.func.rfind('.')+1:]
-            experiment.data_function = getattr( __import__(module_name), func_name )
-        else:
-            experiment.data_function = locals()[FLAGS.func]
-        print("Funcion name: " + experiment.data_function.__name__)   
-    #
-    if FLAGS.mirror:
-        experiment.seq_mirror = 1
+    if FLAGS.experiment != '':
+        experiment.load_from_file(FLAGS.experiment)
+
     _load_cache(CACHE_FILE)
     main(seed=FLAGS.seed, pop_size=FLAGS.popsize, offspring_size=FLAGS.offspring, 
                 NEV=FLAGS.nev, CXPB=FLAGS.cxpb, MUTPB=FLAGS.mutpb, 
