@@ -42,7 +42,8 @@ class DataLoader(object):
         for v in list(df):
             if v in cols and cols[v]:
                 _filt.append(v)
-        self.df = df.filter(items=_filt)
+        temp_df = df.filter(items=_filt)
+        self.df = (temp_df - temp_df.mean()) / (temp_df.max() - temp_df.min()) 
         self.input_size = len(list(self.df))
     #
     def get_sequence(self, _range):
