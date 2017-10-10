@@ -46,6 +46,7 @@ def build_lstm_graph_with_config(config):
             with tf.name_scope("train"):
                 # loss = -tf.reduce_sum(targets * tf.log(tf.clip_by_value(prediction, 1e-10, 1.0)))
                 loss = tf.reduce_mean(tf.square(prediction - targets), name="loss_mse")
+                #loss = tf.losses.huber_loss(targets, prediction)
                 optimizer = tf.train.AdamOptimizer(learning_rate)
                 minimize = optimizer.minimize(loss, name="loss_mse_adam_minimize")
                 tf.summary.scalar("loss_mse", loss)
@@ -92,10 +93,10 @@ def _compute_learning_rates(config, experiment):
 def train_lstm_graph(dataset, lstm_graph, config, experiment, predicts=False):
     final_prediction = []
     final_loss = None
-    graph_name = "%s_lr%.2f_lr_decay%.3f_lstm%d_step%d_input%d_batch%d_epoch%d" % (
+    graph_name = "%s_lr%.2f_lr_decay%.3f_lstm%d_step%d_lays%d_input%d_batch%d_epoch%d" % (
         dataset.name,
         config.init_learning_rate, config.learning_rate_decay,
-        config.lstm_size, config.num_steps,
+        config.lstm_size, config.num_steps, config.num_layers,
         config.input_size, experiment.batch_size, experiment.max_epoch)
     #print( "Graph Name:", graph_name)
     # Uncomment to print tensors
@@ -150,23 +151,28 @@ def train_lstm_graph(dataset, lstm_graph, config, experiment, predicts=False):
         if not os.path.exists(MODEL_DIR):
             os.mkdir(MODEL_DIR)
         saver = tf.train.Saver()
-        saver.save(sess, os.path.join(MODEL_DIR, "%s_rnn_model_%s.ckpt" % (dataset.name, graph_name)), global_step=epoch_step)
+        full_graph_path = os.path.join(MODEL_DIR, "%s_rnn_model_%s.ckpt" % (dataset.name, graph_name))
+        saver.save(sess, full_graph_path, global_step=epoch_step)
+        #saver.save(sess, full_graph_path)
     # with
     if predicts:
         if not os.path.exists(PREDICT_DIR):
             os.mkdir(PREDICT_DIR)
-        with open(PREDICT_DIR + "/" + "final_predictions.{}.json".format(graph_name), 'w') as fout:
-            fout.write(json.dumps(final_prediction.tolist()))
+        with open(PREDICT_DIR + "/" + "final_predictions.{}.csv".format(graph_name), 'w') as fout:
+            #fout.write(json.dumps(final_prediction.tolist()))
+            fout.write("ground truth, prediction\n")
+            for i in range(len(dataset.test_y)):
+                fout.write(str(dataset.test_y[i])+","+str(final_prediction[i])+"\n")
     
-    return final_loss
+    return final_loss, full_graph_path
 # train_lstm_graph
 
 
 def evaluate(dataset, config, experiment, predicts=False):
     lstm_graph = build_lstm_graph_with_config(config=config)
-    loss = train_lstm_graph(dataset, lstm_graph, config, experiment, predicts)
+    loss, full_graph_path = train_lstm_graph(dataset, lstm_graph, config, experiment, predicts)
     no_vars = _count_trainable_variables(lstm_graph)
-    return [loss, no_vars]
+    return [loss, no_vars, full_graph_path]
 
 
 

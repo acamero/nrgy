@@ -21,6 +21,8 @@ from util.simple_rnn import evaluate
 #}
 from deap import creator, base, tools, algorithms
 
+# If True, the final predictions of each evaluated solution are stored
+PREDICTS = True
 
 CACHE_FILE = 'cache.json'
 # TODO parameters!
@@ -119,7 +121,7 @@ def evaluate_individual(individual):
     print("Evaluate", str(config))
     if not fitness:
         dataset = generate_data(config, experiment)
-        loss, no_vars = evaluate(dataset, config, experiment, predicts=False)
+        loss, no_vars, _ = evaluate(dataset, config, experiment, predicts=PREDICTS)
         fitness = [float(loss), float(no_vars)]
         #fitness = [np.random.rand(), np.random.rand()]
         upsert_cache(config, fitness)

@@ -29,7 +29,7 @@ class Experiment(object):
         self.max_epoch = 100
         self.batch_size = 100
         self.seq_start = 0
-        self.seq_end = 10000
+        self.seq_end = 100
         self.seq_length = 10000
         self.test_ratio = 0.2
     #
@@ -75,5 +75,5 @@ MODEL_DIR = "_models"
 PREDICT_DIR = "_predicts"
 
 LOSS_REPORT = 5
-PREDICTIONS_REPORT = 200
+PREDICTIONS_REPORT = 50
 
