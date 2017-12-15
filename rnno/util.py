@@ -65,6 +65,7 @@ class FitnessCache(object):
         try:
             with open(filename, 'r') as f:
                 f_str = f.read()
+                print(f_str)
                 self._CACHE = json.loads(f_str)
                 print(str(len(self._CACHE)) + ' entries loaded into the cache memory')
             f.close()
@@ -80,10 +81,10 @@ class FitnessCache(object):
         return None
 
     def save_to_file(self, filename):
-        dj = json.dumps(self._CACHE).encode('utf-8')
+        dj = json.dumps(self._CACHE)
         try:
             with open(filename,'w') as f:
-                f.write(dj)
+                f.write(str(dj))
             f.close()
             print(str(len(self._CACHE)) + ' cache entries saved')
         except IOError:
@@ -93,7 +94,7 @@ class FitnessCache(object):
 ############################################################################################################     
 class Config(object):
 
-    def __init__(self, filename):
+    def __init__(self):
         # Default params
         self.config_name = 'default'
         self.data_folder = '../data/'
@@ -110,8 +111,6 @@ class Config(object):
         self.max_look_back = 100
         self.max_neurons = 16
         self.max_layers = 16
-        # Update the params and add new ones
-        self._load_from_file(filename)
     
     def __str__(self):
         return str(self.__dict__)
@@ -123,8 +122,11 @@ class Config(object):
 
     def get(self, attr):
         return getattr(self, attr)
+
+    def set(self, attr, value):
+        setattr(self, attr, value)
     
-    def _load_from_file(self, filename):
+    def load_from_file(self, filename):
         json_config = {}
         try:
             with open(filename, 'r') as f:

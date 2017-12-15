@@ -18,7 +18,7 @@ from deap import creator, base, tools, algorithms
 
 
 #########################################################################################################################
-class GABase(BaseOptimizer):
+class EBase(BaseOptimizer):
 
     @abstractmethod
     def _mate(self, ind1, ind2):
@@ -34,6 +34,10 @@ class GABase(BaseOptimizer):
 
     @abstractmethod
     def _replace(self, pop, offspring):
+        raise NotImplemented() 
+
+    @abstractmethod
+    def _auto_adjust(self, logbook):
         raise NotImplemented() 
 
     def _validate_config(self, config):
@@ -160,14 +164,15 @@ class GABase(BaseOptimizer):
             if hall_of_fame is not None:
                 hall_of_fame.update(pop)
             logbook.record(evaluations=evals, gen=g, **record)
+            # The algorithm might adjust the parameters
+            self._auto_adjust(logbook)
             g += 1
         return pop, logbook, hall_of_fame
 
          
 
 #########################################################################################################################
-
-class SPXGaussianGA(GABase):
+class EliteSpxGaussian(EBase):
 
     def _validate_config(self, config):
         if config.std is None or config.std < 0:
@@ -189,18 +194,67 @@ class SPXGaussianGA(GABase):
             self._validate_individual(ind)
 
     def _select(self, individuals, k):
-        return tools.selNSGA2(individuals, k)  
+        return tools.selTournament(individuals, k, 2)  
 
     def _replace(self, pop, offspring):
         return tools.selBest(pop, self.config.pop_size - self.config.offspring_size) + offspring
 
+    def _auto_adjust(self, logbook):
+        pass
 
 
 
+#########################################################################################################################
+class MuPLambdaSpxGaussian(EBase):
+
+    def _validate_config(self, config):
+        if config.std is None or config.std < 0:
+            return False
+        return super()._validate_config(config)
+
+    def _mate(self, ind1, ind2):
+        if np.random.rand() < self.config.cx_prob:
+            tools.cxOnePoint(ind1, ind2)
+            del ind1.fitness.values
+            del ind2.fitness.values
+
+    def _mutate(self, ind):
+        for i in range(len(ind)):
+            if np.random.rand() < self.config.mut_prob:
+                ind[i] = int(round(np.random.normal( ind[i], self.config.std)))
+                del ind.fitness.values
+        if not ind.fitness.valid:
+            self._validate_individual(ind)
+
+    def _select(self, individuals, k):
+        return tools.selTournament(individuals, k, 2)  
+
+    def _replace(self, pop, offspring):
+        return tools.selBest(pop + offspring, self.config.pop_size)
+
+    def _auto_adjust(self, logbook):
+        pass
 
 
 
+#########################################################################################################################
+class AdjMuPLambdaSpxGaussian(MuPLambdaSpxGaussian):
 
-
+    def _auto_adjust(self, logbook):
+        means = logbook.select("mean")
+        diffs = []
+        for i in range(len(self.targets)):            
+            diff = means[-1][i] - means[-2][i]
+            if targets[i] < 0 and diff <= 0:
+                diffs.append(1)
+            elif targets[i] > 0 and diff >= 0:
+                diffs.append(1)
+            else:
+                diffs.append(-1)        
+        if np.sum(diffs) > 0:
+            # We are improving (on average)
+            pass
+        else:
+            pass
 
 

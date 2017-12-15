@@ -2,6 +2,7 @@ import tensorflow as tf
 import rnn as nn
 import util as ut
 import numpy as np
+import random as rd
 import pandas as pd
 import argparse
 from abc import ABC, abstractmethod
@@ -31,6 +32,7 @@ class BaseOptimizer(ABC):
         self.layer_in = len(config.x_features)
         self.layer_out = len(config.y_features)
         np.random.seed(seed)
+        rd.seed(seed)
         tf.set_random_seed(seed)
 
     @abstractmethod
@@ -65,6 +67,8 @@ class BaseOptimizer(ABC):
                     batch_size=self.config.batch_size, 
                     look_back=decoded['look_back']) # Note that the look_back value is got from the solution
             self.cache.upsert_cache(model_name, train_metrics)
+        else:
+            print("Metrics load from cache")
         return train_metrics
 
     def optimize(self, hof_size=1):
@@ -108,7 +112,8 @@ if __name__ == '__main__':
           help='Experiment configuration file path (json format).'
     )
     FLAGS, unparsed = parser.parse_known_args()
-    config = ut.Config(FLAGS.config)
+    config = ut.Config()
+    config.load_from_file(FLAGS.config)
     reader = ut.DataReader()
     # TODO improve to enable non temporal data
     data_dict = reader.read_temporal_data( config.data_folder )
@@ -117,9 +122,9 @@ if __name__ == '__main__':
     optimizer = config.optimizer_class(data_dict, config, cache, seed=FLAGS.seed)
     pop, logbook, hof = optimizer.optimize(FLAGS.hof)
     log_df = pd.DataFrame(data=logbook)
-    log_df.to_csv(config.config_name + '-log.csv', sep=';', encoding='utf-8')    
+    log_df.to_csv(config.results_folder + config.config_name + '-log.csv', sep=';', encoding='utf-8')    
     try:
-        with open(config.config_name + '-sol.csv','w') as f:
+        with open(config.results_folder + config.config_name + '-sol.csv','w') as f:
             for sol in hof:
                 f.write(str(sol) + ';' + str(sol.fitness.values))
                 print('sol=' + str(sol) + ';fitness=' + str(sol.fitness.values))

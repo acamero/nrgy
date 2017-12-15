@@ -1,6 +1,5 @@
 __pycache__
 *.pyc
 *.hdf5
-configurations/
 models/
 results/
