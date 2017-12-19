@@ -1,6 +1,0 @@
-*.csv
-*.json
-!config.json
-_logs/
-_models/
-_predicts/

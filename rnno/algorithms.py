@@ -177,6 +177,8 @@ class EliteSpxGaussian(EBase):
     def _validate_config(self, config):
         if config.std is None or config.std < 0:
             return False
+        else:
+            self.std_adj = [100*config.std, config.max_look_back*config.std, config.max_layers*config.std]
         return super()._validate_config(config)
 
     def _mate(self, ind1, ind2):
@@ -188,7 +190,7 @@ class EliteSpxGaussian(EBase):
     def _mutate(self, ind):
         for i in range(len(ind)):
             if np.random.rand() < self.config.mut_prob:
-                ind[i] = int(round(np.random.normal( ind[i], self.config.std)))
+                ind[i] = int(round(np.random.normal( ind[i], self.std_adj[np.min([i,2])] )))
                 del ind.fitness.values
         if not ind.fitness.valid:
             self._validate_individual(ind)
@@ -210,18 +212,17 @@ class MuPLambdaSpxGaussian(EBase):
     def _validate_config(self, config):
         if config.std is None or config.std < 0:
             return False
+        else:
+            self.std_adj = [100*config.std, config.max_look_back*config.std, config.max_layers*config.std]
         return super()._validate_config(config)
 
     def _mate(self, ind1, ind2):
-        if np.random.rand() < self.config.cx_prob:
-            tools.cxOnePoint(ind1, ind2)
-            del ind1.fitness.values
-            del ind2.fitness.values
+        pass
 
     def _mutate(self, ind):
         for i in range(len(ind)):
             if np.random.rand() < self.config.mut_prob:
-                ind[i] = int(round(np.random.normal( ind[i], self.config.std)))
+                ind[i] = int(round(np.random.normal( ind[i], self.std_adj[np.min([i,2])] )))
                 del ind.fitness.values
         if not ind.fitness.valid:
             self._validate_individual(ind)
@@ -238,23 +239,25 @@ class MuPLambdaSpxGaussian(EBase):
 
 
 #########################################################################################################################
-class AdjMuPLambdaSpxGaussian(MuPLambdaSpxGaussian):
+class SelfAdjMuPLambdaSpxGaussian(MuPLambdaSpxGaussian):
 
     def _auto_adjust(self, logbook):
         means = logbook.select("mean")
         diffs = []
-        for i in range(len(self.targets)):            
+        for i in range(len(self.config.targets)):            
             diff = means[-1][i] - means[-2][i]
-            if targets[i] < 0 and diff <= 0:
+            if self.config.targets[i] < 0 and diff <= 0:
                 diffs.append(1)
-            elif targets[i] > 0 and diff >= 0:
+            elif self.config.targets[i] > 0 and diff >= 0:
                 diffs.append(1)
             else:
                 diffs.append(-1)        
         if np.sum(diffs) > 0:
             # We are improving (on average)
-            pass
+            self.config.mut_prob = self.config.mut_prob ** 4
+            self.config.cx_prob = self.config.cx_prob ** 4
         else:
-            pass
+            self.config.mut_prob = self.config.mut_prob / 4
+            self.config.cx_prob = self.config.cx_prob / 4
 
 

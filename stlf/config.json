@@ -1,1 +1,0 @@
-{"data_name":"sin", "data_function":"numpy.sin", "dimensions":1, "additional_data":0, "init_epoch":1, "max_epoch":100, "batch_size":100, "seq_start":0, "seq_end":10000, "seq_length":10000, "test_ratio":0.2}
