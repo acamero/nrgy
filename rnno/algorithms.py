@@ -172,13 +172,11 @@ class EBase(BaseOptimizer):
          
 
 #########################################################################################################################
-class EliteSpxGaussian(EBase):
+class EliteSpxUniform(EBase):
 
     def _validate_config(self, config):
-        if config.std is None or config.std < 0:
+        if config.mut_max_step is None or config.mut_max_step < 0:
             return False
-        else:
-            self.std_adj = [100*config.std, config.max_look_back*config.std, config.max_layers*config.std]
         return super()._validate_config(config)
 
     def _mate(self, ind1, ind2):
@@ -190,7 +188,11 @@ class EliteSpxGaussian(EBase):
     def _mutate(self, ind):
         for i in range(len(ind)):
             if np.random.rand() < self.config.mut_prob:
-                ind[i] = int(round(np.random.normal( ind[i], self.std_adj[np.min([i,2])] )))
+                # We are always moving at least one step forward
+                step = np.max([1, np.random.randint(0, self.config.mut_max_step)])
+                if np.random.randn() < 0:
+                    step = -1 * step
+                ind[i] = ind[i] + step
                 del ind.fitness.values
         if not ind.fitness.valid:
             self._validate_individual(ind)
@@ -207,13 +209,11 @@ class EliteSpxGaussian(EBase):
 
 
 #########################################################################################################################
-class MuPLambdaSpxGaussian(EBase):
+class MuPLambdaSpxUniform(EBase):
 
     def _validate_config(self, config):
-        if config.std is None or config.std < 0:
+        if config.mut_max_step is None or config.mut_max_step < 0:
             return False
-        else:
-            self.std_adj = [100*config.std, config.max_look_back*config.std, config.max_layers*config.std]
         return super()._validate_config(config)
 
     def _mate(self, ind1, ind2):
@@ -222,7 +222,11 @@ class MuPLambdaSpxGaussian(EBase):
     def _mutate(self, ind):
         for i in range(len(ind)):
             if np.random.rand() < self.config.mut_prob:
-                ind[i] = int(round(np.random.normal( ind[i], self.std_adj[np.min([i,2])] )))
+                # We are always moving at least one step forward
+                step = np.max([1, np.random.randint(0, self.config.mut_max_step)])
+                if np.random.randn() < 0:
+                    step = -1 * step
+                ind[i] = ind[i] + step
                 del ind.fitness.values
         if not ind.fitness.valid:
             self._validate_individual(ind)
@@ -239,25 +243,26 @@ class MuPLambdaSpxGaussian(EBase):
 
 
 #########################################################################################################################
-class SelfAdjMuPLambdaSpxGaussian(MuPLambdaSpxGaussian):
+class SelfAdjMuPLambdaSpxUniform(MuPLambdaSpxUniform):
 
     def _auto_adjust(self, logbook):
-        means = logbook.select("mean")
-        diffs = []
-        for i in range(len(self.config.targets)):            
-            diff = means[-1][i] - means[-2][i]
-            if self.config.targets[i] < 0 and diff <= 0:
-                diffs.append(1)
-            elif self.config.targets[i] > 0 and diff >= 0:
-                diffs.append(1)
+        means = logbook.select("avg")
+        if len(means) > 1:
+            diffs = []
+            for i in range(len(self.config.targets)):            
+                diff = means[-1][i] - means[-2][i]
+                if self.config.targets[i] < 0 and diff <= 0:
+                    diffs.append(1)
+                elif self.config.targets[i] > 0 and diff >= 0:
+                    diffs.append(1)
+                else:
+                    diffs.append(-1)        
+            if np.sum(diffs) > 0:
+                # We are improving (on average)
+                self.config.mut_prob = self.config.mut_prob ** 4
+                self.config.cx_prob = self.config.cx_prob ** 4
             else:
-                diffs.append(-1)        
-        if np.sum(diffs) > 0:
-            # We are improving (on average)
-            self.config.mut_prob = self.config.mut_prob ** 4
-            self.config.cx_prob = self.config.cx_prob ** 4
-        else:
-            self.config.mut_prob = self.config.mut_prob / 4
-            self.config.cx_prob = self.config.cx_prob / 4
+                self.config.mut_prob = self.config.mut_prob / 4
+                self.config.cx_prob = self.config.cx_prob / 4
 
 
