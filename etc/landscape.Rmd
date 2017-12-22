@@ -1,0 +1,107 @@
+---
+title: "RNN Landscape"
+author: "Andrés Camero"
+date: "December 21, 2017"
+output:
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+```
+
+# Search space analysis
+
+```{r echo=FALSE}
+# axuiliary function that computes the search space size, its stats and the configurations
+search_space <- function(max_layers, max_nn_per_layer) {
+  search_space_size <- sum( sapply(1:max_layers, function(x) {max_nn_per_layer^x}) )
+  # build the space of configurations (permutations with repetition)
+  nets <- expand.grid(rep(list(1:max_nn_per_layer),max_layers))
+  for(i in 1:(max_layers-1)) {
+    temp <- expand.grid(rep(list(1:max_nn_per_layer),max_layers-i))
+    for(j in 1:i) {
+      temp[,paste("Var",(max_layers-j+1),sep="")] <- 0
+    }
+    nets <- rbind(nets,temp)
+  }
+  # sum the number of neurons in the net
+  nets$nns <- rowSums(nets)
+  # count the number of active layer in the configuration
+  nets[,"layers"] <- rowSums(nets[,1:max_layers]>0) 
+  # summarize the data
+  nets_table <- table(nets[,c("nns","layers")])
+  return(list(nets_summary = nets_table, nets_config = nets, size = search_space_size))
+}
+```
+
+## An introduction
+
+```{r echo=FALSE}
+# Max number of layers
+max_layers <- 3
+# Max number of neurons per each layer
+max_nn_per_layer <- 3
+result <- search_space(max_layers, max_nn_per_layer)
+```
+
+Considering all the possible nets that have at most m=`r max_layers` layers and n=`r max_nn_per_layer` neurons per layer, the search space has a size equal to `r result$size`. Note that the size is given by the sum of all the permutations with repetition of **n** neurons, arranged in **m**, **m-1**, ..., and **1** layers. Therefore, the size of the search space can be calculated as:
+
+$$\sum_{i=1}^m n^{i}$$
+
+Thus, the search space is $O(n^{m})$. Note that this formulation corresponds to a (divergent) geometric series.
+
+The following plot shos the distribution of configurations in regard to the total number of neurons and to the number of layers.
+
+```{r echo=FALSE}
+plot(result$nets_summary, xlab="Number of neurons", ylab="Number of layers", main=paste(max_nn_per_layer,"x",max_layers," configurations"))
+```
+
+## Induction
+
+```{r echo=FALSE}
+# Max number of layers
+max_layers_b <- 4
+# Max number of neurons per each layer
+max_nn_per_layer_b <- 5
+result_b <- search_space(max_layers_b, max_nn_per_layer_b)
+```
+
+Now, let us consider that m=`r max_layers_b` and n=`r max_nn_per_layer_b`. The search space is equal to `r result_b$size` and the distribution of configurations is as follows.
+
+```{r echo=FALSE}
+plot(result_b$nets_summary, xlab="Number of neurons", ylab="Number of layers", main=paste(max_nn_per_layer_b,"x",max_layers_b," configurations"))
+```
+
+
+```{r echo=FALSE}
+# Max number of layers
+max_layers_c <- 5
+# Max number of neurons per each layer
+max_nn_per_layer_c <- 7
+result_c <- search_space(max_layers_c, max_nn_per_layer_c)
+```
+
+Let us increase the values up to m=`r max_layers_c` and n=`r max_nn_per_layer_c`. The search space is equal to `r result_c$size` and the distribution of configurations is as follows.
+
+```{r echo=FALSE}
+plot(result_c$nets_summary, xlab="Number of neurons", ylab="Number of layers", main=paste(max_nn_per_layer_c,"x",max_layers_c," configurations"))
+```
+
+
+```{r echo=FALSE}
+# Max number of layers
+max_layers_d <- 6
+# Max number of neurons per each layer
+max_nn_per_layer_d <- 9
+result_d <- search_space(max_layers_d, max_nn_per_layer_d)
+```
+
+And even greater values, m=`r max_layers_d` and n=`r max_nn_per_layer_d`. The search space is equal to `r result_d$size` and the distribution of configurations is as follows.
+
+```{r echo=FALSE}
+plot(result_d$nets_summary, xlab="Number of neurons", ylab="Number of layers", main=paste(max_nn_per_layer_d,"x",max_layers_d," configurations"))
+```

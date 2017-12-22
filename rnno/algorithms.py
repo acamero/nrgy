@@ -53,10 +53,6 @@ class EBase(BaseOptimizer):
         """
         if config.pop_size is None or config.pop_size < 1:
             return False
-        if config.cx_prob is None or config.cx_prob > 1 or config.cx_prob < 0:
-            return False
-        if config.mut_prob is None or config.mut_prob > 1 or config.mut_prob < 0:
-            return False
         if config.max_evals is None or config.max_evals < 1:
             return False
         if config.offspring_size is None or config.offspring_size < 1:
@@ -102,8 +98,12 @@ class EBase(BaseOptimizer):
         for i in range(len(individual[2:])):
             if individual[i+2] < 1:
                 individual[i+2] = 1
-            if individual[i+2] > self.config.max_layers:
-                individual[i+2] = self.config.max_layers
+            if individual[i+2] > self.config.max_neurons:
+                individual[i+2] = self.config.max_neurons
+        while len(individual) > self.config.max_layers + 2:
+            individual.pop()
+        if len(individual) < 3:
+            individual.append(1)
 
     def _run_algorithm(self, stats, hall_of_fame):
         # First, we initialize the framework
@@ -177,6 +177,10 @@ class EliteSpxUniform(EBase):
     def _validate_config(self, config):
         if config.mut_max_step is None or config.mut_max_step < 0:
             return False
+        if config.cx_prob is None or config.cx_prob > 1 or config.cx_prob < 0:
+            return False
+        if config.mut_prob is None or config.mut_prob > 1 or config.mut_prob < 0:
+            return False
         return super()._validate_config(config)
 
     def _mate(self, ind1, ind2):
@@ -214,20 +218,34 @@ class MuPLambdaSpxUniform(EBase):
     def _validate_config(self, config):
         if config.mut_max_step is None or config.mut_max_step < 0:
             return False
+        if config.mut_prob is None or config.mut_prob > 1 or config.mut_prob < 0:
+            return False
+        if config.mut_x_prob is None or config.mut_x_prob > 1 or config.mut_x_prob < 0:
+            return False
         return super()._validate_config(config)
 
     def _mate(self, ind1, ind2):
         pass
 
     def _mutate(self, ind):
+        # Mutate the inner values
         for i in range(len(ind)):
             if np.random.rand() < self.config.mut_prob:
                 # We are always moving at least one step forward
                 step = np.max([1, np.random.randint(0, self.config.mut_max_step)])
-                if np.random.randn() < 0:
+                if np.random.rand() < 0.5:
                     step = -1 * step
                 ind[i] = ind[i] + step
                 del ind.fitness.values
+        # Add or remove layers
+        if np.random.rand() < self.config.mut_x_prob:
+            i = np.random.randint(2, len(ind))
+            # with the same probaility we add or delete a layer
+            if np.random.rand() > 0.5:
+                ind.insert(i, ind[i])
+            elif len(ind) > 3:
+                ind.pop(i)
+            del ind.fitness.values
         if not ind.fitness.valid:
             self._validate_individual(ind)
 
@@ -260,9 +278,9 @@ class SelfAdjMuPLambdaSpxUniform(MuPLambdaSpxUniform):
             if np.sum(diffs) > 0:
                 # We are improving (on average)
                 self.config.mut_prob = self.config.mut_prob ** 4
-                self.config.cx_prob = self.config.cx_prob ** 4
+                self.config.mut_x_prob = self.config.mut_x_prob ** 4
             else:
                 self.config.mut_prob = self.config.mut_prob / 4
-                self.config.cx_prob = self.config.cx_prob / 4
+                self.config.mut_x_prob = self.config.mut_x_prob / 4
 
 
