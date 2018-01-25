@@ -1,8 +1,8 @@
 import tensorflow as tf
-import rnn as nn
-import util as ut
 import numpy as np
 import random as rd
+import rnn as nn
+import util as ut
 import pandas as pd
 import argparse
 from abc import ABC, abstractmethod
@@ -17,6 +17,14 @@ from abc import ABC, abstractmethod
 #}
 from deap import creator, base, tools, algorithms
 
+
+# The below is necessary in Python 3.2.3 onwards to
+# have reproducible behavior for certain hash-based operations.
+# See these references for further details:
+# https://docs.python.org/3.4/using/cmdline.html#envvar-PYTHONHASHSEED
+# https://github.com/keras-team/keras/issues/2280#issuecomment-306959926
+import os
+os.environ['PYTHONHASHSEED'] = '0'
 
 
 #########################################################################################################################
@@ -111,12 +119,13 @@ if __name__ == '__main__':
           default='config.json',
           help='Experiment configuration file path (json format).'
     )
+    
     FLAGS, unparsed = parser.parse_known_args()
     config = ut.Config()
     config.load_from_file(FLAGS.config)
-    reader = ut.DataReader()
-    # TODO improve to enable non temporal data
-    data_dict = reader.read_temporal_data( config.data_folder )
+    print(config)
+    reader =config.data_reader_class()
+    data_dict = reader.load_data( config.data_folder )
     cache = ut.FitnessCache()
     cache.load_from_file(config.cache_file) 
     optimizer = config.optimizer_class(data_dict, config, cache, seed=FLAGS.seed)

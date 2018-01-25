@@ -181,6 +181,8 @@ class EliteSpxUniform(EBase):
             return False
         if config.mut_prob is None or config.mut_prob > 1 or config.mut_prob < 0:
             return False
+        if config.mut_x_prob is None or config.mut_x_prob > 1 or config.mut_x_prob < 0:
+            return False
         return super()._validate_config(config)
 
     def _mate(self, ind1, ind2):
@@ -190,14 +192,24 @@ class EliteSpxUniform(EBase):
             del ind2.fitness.values
 
     def _mutate(self, ind):
+        # Mutate the inner values
         for i in range(len(ind)):
             if np.random.rand() < self.config.mut_prob:
                 # We are always moving at least one step forward
                 step = np.max([1, np.random.randint(0, self.config.mut_max_step)])
-                if np.random.randn() < 0:
+                if np.random.rand() < 0.5:
                     step = -1 * step
                 ind[i] = ind[i] + step
                 del ind.fitness.values
+        # Add or remove layers
+        if np.random.rand() < self.config.mut_x_prob:
+            i = np.random.randint(2, len(ind))
+            # with the same probaility we add or delete a layer
+            if np.random.rand() > 0.5:
+                ind.insert(i, ind[i])
+            elif len(ind) > 3:
+                ind.pop(i)
+            del ind.fitness.values
         if not ind.fitness.valid:
             self._validate_individual(ind)
 

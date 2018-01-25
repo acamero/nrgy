@@ -43,7 +43,7 @@ class TrainRNN(object):
     def _process_data(self, df, x_features, y_features, look_back):
         len_data = df.shape[0]
         x = np.array( [df[x_features].values[i:i+look_back] 
-                for i in range(len_data - look_back)] ).reshape(-1,look_back, 2)
+                for i in range(len_data - look_back)] ).reshape(-1,look_back, len(x_features))
         y = df[y_features].values[look_back:,:]
         return x,y
 
@@ -109,7 +109,8 @@ class TrainRNN(object):
                     verbose=1,
                     nb_epoch=epoch,
                     validation_split=val_split,
-                    callbacks=[self.checkpointer])
+                    callbacks=[self.checkpointer],
+                    shuffle=False)
         train_time = time.time() - start
         print('Finish trainning. Time: ', train_time)
         # Test the RNN

@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import glob
 import json
+from abc import ABC, abstractmethod
+from dateutil.parser import parse
 
 ############################################################################################################
 def mse_loss(y_predict, y):
@@ -13,9 +15,20 @@ def mae_loss(y_predict, y):
 
 
 ############################################################################################################
-class DataReader(object):
- 
-    def _load_data(self, data_path, time_column=True):
+class DataReader(ABC):
+    @abstractmethod
+    def load_data(self, data_path):
+        raise NotImplemented()
+
+
+class SepChannelsDataReader(DataReader):
+    """
+    Load data stored in separate channels. Each channel contains a Unix timestamp and a value, separed by a space.
+    The name of each channel has to be in the format 'channel_<channel_number>.dat".
+    Channels labels are stored in a 'labels.dat' file with the following
+    format: "<channel_number> <channel_name>"
+    """
+    def load_data(self, data_path):
         dirList = os.listdir(data_path) 
         labels = {}
         dfs = {}
@@ -26,13 +39,9 @@ class DataReader(object):
                 with open(label_file) as f:
                     for line in f:
                         splitted_line = line.split(' ')
-                        labels[_dir][int(splitted_line[0])] = splitted_line[1].strip() #+ '_' + splitted_line[0]
+                        labels[_dir][int(splitted_line[0])] = splitted_line[0] + '_' + splitted_line[1].strip() 
                 print(labels)
-                if time_column:
-                    dfs[_dir] = self._read_merge_data(data_path, _dir, labels)
-                else:
-                    # TODO implement data reading without merging by time data
-                    pass
+                dfs[_dir] = self._read_merge_data(data_path, _dir, labels)                
         #
         return dfs
 
@@ -50,10 +59,6 @@ class DataReader(object):
         df = df.set_index(df['timestamp'].values)
         df.drop(['unix_time','timestamp'], axis=1, inplace=True)
         return df
-
-    def read_temporal_data(self, data_path):
-        return self._load_data(data_path, time_column=True)
-
 
 
 ############################################################################################################
@@ -102,6 +107,7 @@ class Config(object):
         self.results_folder = 'results/'
         self.cache_file = 'cache.json'
         self.optimizer_class = None
+        self.data_reader_class = None
         self.x_features = []
         self.y_features = []
         self.test_split = 0.2
@@ -144,6 +150,13 @@ class Config(object):
                     self.optimizer_class = getattr( __import__(module_name), class_name )
                 else:
                     self.optimizer_class = locals()[json_config[key]]
+            elif key == 'data_reader_class' and json_config[key] != '':
+                if json_config[key].count('.') > 0:
+                    module_name = json_config[key][0:json_config[key].rfind('.')]
+                    class_name = json_config[key][json_config[key].rfind('.')+1:]
+                    self.data_reader_class = getattr( __import__(module_name), class_name )
+                else:
+                    self.data_reader_class = locals()[json_config[key]]
             else:
                 setattr(self, key, json_config[key])
 
