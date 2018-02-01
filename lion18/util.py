@@ -17,19 +17,24 @@ def mae_loss(y_predict, y):
 ############################################################################################################
 class DataReader(ABC):
     @abstractmethod
-    def load_data(self, data_path):
+    def load_data(self, data_path, inner=False):
         raise NotImplemented()
 
 class ParkingDFDataReader(DataReader):
     """
     """
-    def load_data(self, data_path):
+    def load_data(self, data_path, inner=False):
         dfs = {}
-        temp_df = pd.read_csv(data_path + 'training_norm_df.csv', sep = ',')
+        train_file = 'training_norm_outer_df.csv'
+        test_file = 'testing_norm_outer_df.csv'
+        if inner:
+            train_file = 'training_norm_inner_df.csv'
+            test_file = 'testing_norm_inner_df.csv'
+        temp_df = pd.read_csv(data_path + train_file, sep = ',')
         temp_df = temp_df.set_index(temp_df['Datetime'].values)
         temp_df.drop(['Datetime'], axis=1, inplace=True)        
         dfs['train'] = temp_df
-        temp_df = pd.read_csv(data_path + 'testing_norm_df.csv', sep = ',')
+        temp_df = pd.read_csv(data_path + test_file, sep = ',')
         temp_df = temp_df.set_index(temp_df['Datetime'].values)
         temp_df.drop(['Datetime'], axis=1, inplace=True)
         dfs['test'] = temp_df
@@ -40,24 +45,24 @@ class ParkingDFDataReader(DataReader):
 class ParkingDataReader(DataReader):
     """
     """
-    def load_data(self, data_path):
+    def load_data(self, data_path, inner=False):
         dfs = {}
-        dfs['train'] = self._load_training(data_path)
-        dfs['test'] = self._load_testing(data_path)
+        dfs['train'] = self._load_training(data_path, inner)
+        dfs['test'] = self._load_testing(data_path, inner)
         return dfs
 #
-    def _load_training(self, data_path):
+    def _load_training(self, data_path, inner):
         _file = data_path + 'training.csv'
         df_raw = pd.read_csv(_file, sep = ',')
-        return self._transform_df(df_raw)
+        return self._transform_df(df_raw, inner)
 #
-    def _load_testing(self, data_path):
+    def _load_testing(self, data_path, inner):
         _file = data_path + 'testing.csv'
         df_raw = pd.read_csv(_file, sep = ',')
         df_raw['Timestamp'] = df_raw['Timestamp'].map(self._round_time)
-        return self._transform_df(df_raw)
+        return self._transform_df(df_raw, inner)
 #
-    def _transform_df(self, df_raw):
+    def _transform_df(self, df_raw, inner):
         system_code_numbers = pd.unique(df_raw['SystemCodeNumber'])
         df = None
         for code in system_code_numbers:
@@ -70,8 +75,12 @@ class ParkingDataReader(DataReader):
             temp_df.columns = [code]
             if df is None:
                 df = temp_df.copy()
-            else:
+            elif inner:
                 df = pd.merge(df, temp_df, how='inner', left_index=True, right_index=True)
+            else:
+                df = pd.merge(df, temp_df, how='outer', left_index=True, right_index=True)
+        df = df.fillna(method='pad')
+        df = df.fillna(method='bfill')
         df['weekday'] = df.index.weekday
         df['time'] = df.index.hour + df.index.minute /60
         return df

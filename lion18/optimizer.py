@@ -77,6 +77,7 @@ class BaseOptimizer(ABC):
             self.cache.upsert_cache(model_name, train_metrics)
         else:
             print("Metrics load from cache")
+        print(decoded, train_metrics)
         return train_metrics
 
     def optimize(self, hof_size=1):
@@ -114,6 +115,12 @@ if __name__ == '__main__':
           help='Hall of fame size.'
     )
     parser.add_argument(
+          '--merge',
+          choices=['inner', 'outer'],
+          default='outer',
+          help='Merge training/testing dataset using inner or outer criteria'
+    )
+    parser.add_argument(
           '--config',
           type=str,
           default='config.json',
@@ -124,7 +131,10 @@ if __name__ == '__main__':
     config = ut.Config()
     config.load_from_file(FLAGS.config)
     reader =config.data_reader_class()
-    data_dict = reader.load_data( config.data_folder )
+    inner = False
+    if FLAGS.merge == 'inner':
+        inner = True
+    data_dict = reader.load_data( config.data_folder, inner )
     cache = ut.FitnessCache()
     cache.load_from_file(config.cache_file) 
     optimizer = config.optimizer_class(data_dict, config, cache, seed=FLAGS.seed)

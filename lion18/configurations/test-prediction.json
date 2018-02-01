@@ -2,7 +2,7 @@
 "config_name" : "test-prediction",
 "data_folder" : "/home/andu/Documents/PHD/datasets/parking-birmingham/",
 "models_folder":"models/test/",
-"solution":[26, 26, 9,23,10,4,8,24,30,5], 
+"solution":[61,23,26,2,1,29,18,9,25,14,20,16,11,26,9,8,4,7], 
 "data_reader_class" : "util.ParkingDFDataReader",
 "results_folder":"results/test/",
 "x_features" : ["Others-CCCPS8", "Others-CCCPS98", "Shopping", "BHMBCCMKT01",

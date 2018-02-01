@@ -22,11 +22,11 @@
        "Bull Ring", "NIA Car Parks", "NIA South",
        "Others-CCCPS105a", "Others-CCCPS119a", "Others-CCCPS133",
        "Others-CCCPS135a", "Others-CCCPS202"],
-"epoch" : 500,
+"epoch" : 10000,
 "val_split" : 0.3,
 "batch_size" : 512,
 "max_look_back" : 31,
-"max_neurons" : 16,
+"max_neurons" : 30,
 "max_layers" : 16,
 "mut_max_step":3,
 "pop_size": 10,
@@ -35,5 +35,5 @@
 "max_evals": 100,
 "offspring_size": 2,
 "targets": [-1.0],
-"metrics": ["mse"]
+"metrics": ["mae"]
 }

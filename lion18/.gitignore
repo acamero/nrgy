@@ -5,3 +5,4 @@ models/
 results/
 test.sh
 default.sh
+nohup*
