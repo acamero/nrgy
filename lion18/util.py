@@ -106,7 +106,7 @@ class FitnessCache(object):
         try:
             with open(filename, 'r') as f:
                 f_str = f.read()
-                print(f_str)
+                #print(f_str)
                 self._CACHE = json.loads(f_str)
                 print(str(len(self._CACHE)) + ' entries loaded into the cache memory')
             f.close()
@@ -139,7 +139,7 @@ class Config(object):
         # Default params
         self.config_name = 'default'
         self.data_folder = '../data/'
-        self.mode_folder = 'models/'
+        self.models_folder = 'models/'
         self.results_folder = 'results/'
         self.cache_file = 'cache.json'
         self.optimizer_class = None
@@ -153,6 +153,8 @@ class Config(object):
         self.max_look_back = 100
         self.max_neurons = 16
         self.max_layers = 16
+        self.min_delta = 0.0001
+        self.patience = 50
     
     def __str__(self):
         return str(self.__dict__)

@@ -23,7 +23,7 @@ K.set_session(K.tf.Session(config=K.tf.ConfigProto(intra_op_parallelism_threads=
 class TrainRNN(object):
 
     def __init__(self, rnn_arch=[2,16,32,64,1], drop_out=0.3,
-            model_file="lstm_model.hdf5", new=True, min_delta = 0.0005, patience = 10):
+            model_file="lstm_model.hdf5", new=True, min_delta = 0.0001, patience = 50):
         """Train a RNN using the input data
         rnn_arch: list containing the number of neurons per layer (the number of hidden layers
             is defined implicitly)
@@ -79,12 +79,9 @@ class TrainRNN(object):
             'trainable_vars':self.trainable_count,'train_time':train_time}
 
     def _train_on_data(self, train_set, test_set, x_features, y_features,
-            epoch, val_split, batch_size, look_back):
+            epoch, val_split, batch_size, look_back, blind=True):
         X_train, y_train = self._process_data(train_set, 
                 x_features, y_features, look_back)
-        X_test, y_test = self._process_data(test_set, 
-                x_features, y_features, look_back)
-        #print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)        
         start = time.time()
         print('Start training. Time: ', start)          
         hist_lstm = self.model.fit(
@@ -99,19 +96,36 @@ class TrainRNN(object):
         train_time = time.time() - start
         print('Finish trainning. Time: ', train_time)
         # Test the RNN
-        # model = load_model(self.model_file)
-        #print(X_test,y_test)
-        pred_lstm = self.model.predict(X_test)
-        #print(pred_lstm)
+        if blind:
+            pred_lstm = self._predict_blind(train_set, test_set, x_features, y_features, look_back)
+            y_test = test_set[y_features].values[:,:]        
+        else:
+            pred_lstm = self._predict_update(train_set, test_set, x_features, y_features, look_back)
+            y_test = test_set[y_features].values[look_back:,:]
         mse_loss_lstm = ut.mse_loss(pred_lstm, y_test)
         mae_loss_lstm = ut.mae_loss(pred_lstm, y_test)
         print('Mean square error on test set: ', mse_loss_lstm)
         print('Mean absolute error on the test set: ', mae_loss_lstm)
         return [mse_loss_lstm, mae_loss_lstm, train_time]
 
+    def _predict_blind(self, train_set, test_set, x_features, y_features, look_back):
+        X_test = train_set[x_features].values[-look_back:] 
+        X_test = X_test.reshape(-1,look_back, len(x_features))        
+        append_features = list(filter(lambda x: x not in y_features, x_features))
+        pred_lstm = np.empty( (0, len(y_features)) , int)    
+        # Add the predicted values
+        for i in range(test_set.shape[0]):        
+            pred_lstm = np.append( pred_lstm, self.model.predict(X_test), axis=0)
+            X_test = X_test[0][1:]
+            x_append = np.concatenate( (pred_lstm[i], test_set[append_features].values[i]) )
+            X_test = np.append( X_test, x_append.reshape((1, len(x_features)) ), axis=0)
+            X_test = X_test.reshape(-1,look_back, len(x_features))  
+        return pred_lstm
 
-
-
+    def _predict_update(self, train_set, test_set, x_features, y_features, look_back):
+        X_test, y_test = self._process_data(test_set, x_features, y_features, look_back)
+        pred_lstm = self.model.predict(X_test)
+        return pred_lstm
 
 
 ############################################################################################################

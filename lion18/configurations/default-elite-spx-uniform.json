@@ -26,15 +26,15 @@
 "val_split" : 0.3,
 "batch_size" : 512,
 "max_look_back" : 31,
-"max_neurons" : 16,
-"max_layers" : 16,
+"max_neurons" : 62,
+"max_layers" : 8,
 "mut_max_step":3,
-"pop_size": 5,
+"pop_size": 2,
 "cx_prob": 0.8,
 "mut_prob": 0.2,
 "mut_x_prob": 0.2,
-"max_evals": 10,
+"max_evals": 3,
 "offspring_size": 1,
 "targets": [-1.0],
-"metrics": ["mse"]
+"metrics": ["mae"]
 }

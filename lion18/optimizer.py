@@ -40,6 +40,8 @@ class BaseOptimizer(ABC):
         self.config = config
         self.layer_in = len(config.x_features)
         self.layer_out = len(config.y_features)
+        self.min_delta = config.min_delta
+        self.patience = config.patience
         np.random.seed(seed)
         rd.seed(seed)
         tf.set_random_seed(seed)
@@ -66,7 +68,8 @@ class BaseOptimizer(ABC):
         train_metrics = self.cache.upsert_cache(model_name, None)
         if train_metrics is None:
             trainer = nn.TrainRNN(rnn_arch=decoded['rnn_arch'], 
-                    drop_out=decoded['drop_out'], model_file=model_file_name, new=True)
+                    drop_out=decoded['drop_out'], model_file=model_file_name, 
+                    new=True, min_delta = self.min_delta, patience = self.patience)
             train_metrics = trainer.train(self.data_dict, 
                     x_features=self.config.x_features, 
                     y_features=self.config.y_features,                     
@@ -140,9 +143,9 @@ if __name__ == '__main__':
     optimizer = config.optimizer_class(data_dict, config, cache, seed=FLAGS.seed)
     pop, logbook, hof = optimizer.optimize(FLAGS.hof)
     log_df = pd.DataFrame(data=logbook)
-    log_df.to_csv(config.results_folder + config.config_name + '-log.csv', sep=';', encoding='utf-8')    
+    log_df.to_csv(config.results_folder + config.config_name + '-' + str(FLAGS.seed) + '-log.csv', sep=';', encoding='utf-8')    
     try:
-        with open(config.results_folder + config.config_name + '-sol.csv','w') as f:
+        with open(config.results_folder + config.config_name + '-' + str(FLAGS.seed) + '-sol.csv','w') as f:
             for sol in hof:
                 f.write(str(sol) + ';' + str(sol.fitness.values))
                 print('sol=' + str(sol) + ';fitness=' + str(sol.fitness.values))
