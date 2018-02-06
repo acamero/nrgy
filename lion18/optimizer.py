@@ -25,7 +25,7 @@ from deap import creator, base, tools, algorithms
 # https://github.com/keras-team/keras/issues/2280#issuecomment-306959926
 import os
 os.environ['PYTHONHASHSEED'] = '0'
-
+import algorithms
 
 
 #########################################################################################################################

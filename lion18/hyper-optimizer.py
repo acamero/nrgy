@@ -1,8 +1,10 @@
 import tensorflow as tf
 import util as ut
+import scipy as sp
 from hyperopt import hp, fmin, tpe
 import numpy as np
 import argparse
+
 
 
 data_dict = {}
