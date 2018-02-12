@@ -1,6 +1,8 @@
 #!/bin/bash
 
-SEED=$1
-echo "./optimizer --config test-elite-spx-uniform.json -seed $i"
-./optimizer --config test-elite-spx-uniform.json -seed $i
+PROGRAM="$1"
+SEED="$2"
+CONFIG="$3"
+echo "./$PROGRAM --config $CONFIG -seed $SEED"
+./$PROGRAM --config $CONFIG -seed $SEED
 
