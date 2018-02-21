@@ -23,7 +23,7 @@ K.set_session(K.tf.Session(config=K.tf.ConfigProto(intra_op_parallelism_threads=
 class TrainRNN(object):
 
     def __init__(self, rnn_arch=[2,16,32,64,1], drop_out=0.3,
-            model_file="lstm_model.hdf5", new=True):
+            model_file="lstm_model.hdf5", new=True, min_delta = 0.0001, patience = 50):
         """Train a RNN using the input data
         rnn_arch: list containing the number of neurons per layer (the number of hidden layers
             is defined implicitly)
@@ -38,6 +38,7 @@ class TrainRNN(object):
         else:
             self.model = load_model(model_file)
         self.checkpointer = ModelCheckpoint(filepath=model_file, verbose=0, save_best_only=True)
+        self.early_stopping = EarlyStopping(monitor='val_loss', min_delta=min_delta, patience=patience, verbose=0, mode='auto')
         self.trainable_count = int(np.sum([K.count_params(p) for p in set(self.model.trainable_weights)]))
         
     def _process_data(self, df, x_features, y_features, look_back):
@@ -106,10 +107,10 @@ class TrainRNN(object):
                     X_train,
                     y_train, 
                     batch_size=batch_size,
-                    verbose=1,
+                    verbose=2,
                     nb_epoch=epoch,
                     validation_split=val_split,
-                    callbacks=[self.checkpointer],
+                    callbacks=[self.early_stopping,  self.checkpointer],
                     shuffle=False)
         train_time = time.time() - start
         print('Finish trainning. Time: ', train_time)

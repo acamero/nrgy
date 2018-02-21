@@ -39,6 +39,8 @@ class BaseOptimizer(ABC):
         self.config = config
         self.layer_in = len(config.x_features)
         self.layer_out = len(config.y_features)
+        self.min_delta = config.min_delta
+        self.patience = config.patience
         np.random.seed(seed)
         rd.seed(seed)
         tf.set_random_seed(seed)
@@ -65,7 +67,8 @@ class BaseOptimizer(ABC):
         train_metrics = self.cache.upsert_cache(model_name, None)
         if train_metrics is None:
             trainer = nn.TrainRNN(rnn_arch=decoded['rnn_arch'], 
-                    drop_out=decoded['drop_out'], model_file=model_file_name, new=True)
+                    drop_out=decoded['drop_out'], model_file=model_file_name, 
+                    new=True, min_delta = self.min_delta, patience = self.patience)
             train_metrics = trainer.train(self.data_dict, 
                     x_features=self.config.x_features, 
                     y_features=self.config.y_features, 
