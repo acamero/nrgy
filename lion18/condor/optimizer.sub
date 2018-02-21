@@ -1,9 +1,17 @@
 Universe       = vanilla
+<<<<<<< HEAD
 Requirements   = (Arch == "X86_64" ) && (OpSys == "LINUX") && (totalcpus >= 2)
 RequestCPUs    = 2
 Request_memory = 16G
 Executable     = run.sh
 Arguments      = "optimizer $(Process) config.json"
+=======
+Requirements   = (Arch == "X86_64" ) && (OpSys == "LINUX")  && (totalcpus >= 2)
+RequestCPUs    = 2
+#Request_memory = 1G
+Executable     = run.sh
+Arguments      = "optimizer $(Process) test-elite-spx-uniform.json"
+>>>>>>> 5d340178494faf75fc5bf7acba1ff4d7fae29553
 Output         = logs/output.$(Process).out
 Error          = logs/error.$(Process).err
 Log            = logs/log.$(Process).log

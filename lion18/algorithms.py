@@ -289,10 +289,11 @@ class SelfAdjMuPLambdaSpxUniform(MuPLambdaSpxUniform):
                     diffs.append(-1)        
             if np.sum(diffs) > 0:
                 # We are improving (on average)
-                self.config.mut_prob = self.config.mut_prob ** 4
-                self.config.mut_x_prob = self.config.mut_x_prob ** 4
+                self.config.mut_prob = self.config.mut_prob * 1.5
+                self.config.mut_x_prob = self.config.mut_x_prob * 1.5
             else:
                 self.config.mut_prob = self.config.mut_prob / 4
                 self.config.mut_x_prob = self.config.mut_x_prob / 4
+        # print(self.config.mut_prob, self.config.mut_x_prob)
 
 
