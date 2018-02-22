@@ -30,11 +30,10 @@ os.environ['PYTHONHASHSEED'] = '0'
 #########################################################################################################################
 class BaseOptimizer(ABC):
 
-    def __init__(self, data, config, cache, seed=1234):
+    def __init__(self, data, config, seed=1234):
         if not self._validate_config(config):
             print('The configuration is not valid')
             raise 
-        self.cache = cache
         self.data = data
         self.config = config
         self.layer_in = len(config.x_features)
@@ -57,21 +56,14 @@ class BaseOptimizer(ABC):
 
     def _evaluate_solution(self, encoded_solution):
         decoded = self._decode_solution(encoded_solution)
-        decoded.model_name
-        print('Model name: ' + decoded.model_name)
-        model_file_name = self.config.models_folder + decoded.model_name + '.hdf5'
-        metrics = self.cache.upsert_cache(decoded.model_name, None)
-        if train_metrics is None:
-            rnn_solution = nn.RNNBuilder(decoded.weights_dict, model_file=model_file_name)
-            y_predicted = rnn_solution.predict(self.data[self.x_features], decoded.look_back)
-            y_gt = self.data[self.y_features].values[decoded.look_back:,:]
-            mse = ut.mse_loss(y_predicted, y_gt)
-            mae = ut.mae_loss(y_predicted, y_gt)
-            metrics = {'trainable_params':rnn_solution.trainable_params, 'hidden_layers':rnn_solution.hidden_layers,
-                    'layers':rnn_solution.layers, 'mse':mse, 'mae':mae}            
-            self.cache.upsert_cache(model_name, metrics)
-        else:
-            print("Metrics load from cache")
+        print('Evaluate: ' + str(decoded['layers']) + ' ...')
+        rnn_solution = nn.RNNBuilder(decoded['layers'], decoded['weights'])
+        y_predicted = rnn_solution.predict(self.data[self.config.x_features], decoded['look_back'])
+        y_gt = self.data[self.config.y_features].values[decoded['look_back']:,:]
+        mse = ut.mse_loss(y_predicted, y_gt)
+        mae = ut.mae_loss(y_predicted, y_gt)
+        metrics = {'trainable_params':rnn_solution.trainable_params, 'num_hidden_layers':rnn_solution.hidden_layers,
+                    'layers':decoded['layers'], 'mse':mse, 'mae':mae, 'num_hidden_neurons':np.sum(decoded['layers'][1:-1])}
         return metrics
 
     def optimize(self, hof_size=1):
@@ -122,11 +114,9 @@ if __name__ == '__main__':
     # Load the data
     reader =config.data_reader_class()
     data = reader.load_data( config.data_folder )
-    # And the cache
-    cache = ut.FitnessCache()
-    cache.load_from_file(config.cache_file) 
+    data = pd.concat([data['train'],data['test']])
     # Select the optimization algorithm
-    optimizer = config.optimizer_class(data, config, cache, seed=FLAGS.seed)
+    optimizer = config.optimizer_class(data, config, seed=FLAGS.seed)
     # And look for an optimal RNN
     pop, logbook, hof = optimizer.optimize(FLAGS.hof)
     log_df = pd.DataFrame(data=logbook)
@@ -134,10 +124,9 @@ if __name__ == '__main__':
     try:
         with open(config.results_folder + config.config_name + '-sol.csv','w') as f:
             for sol in hof:
-                f.write(str(sol) + ';' + str(sol.fitness.values))
+                f.write(str(sol) + ';' + str(sol.fitness.values) + '\n')
                 print('sol=' + str(sol) + ';fitness=' + str(sol.fitness.values))
         f.close()
     except IOError:
         print('Unable to store the hall of fame')
-    cache.save_to_file(config.cache_file)
 

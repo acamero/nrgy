@@ -18,130 +18,93 @@ from deap import creator, base, tools, algorithms
 
 
 #########################################################################################################################
-class EBase(BaseOptimizer):
+class RandomSearch(BaseOptimizer):
 
-    @abstractmethod
-    def _mate(self, ind1, ind2):
-        raise NotImplemented()
-
-    @abstractmethod
-    def _mutate(self, ind):
-        raise NotImplemented()
-
-    @abstractmethod
-    def _select(self, individuals, k):
-        raise NotImplemented()  
-
-    @abstractmethod
-    def _replace(self, pop, offspring):
-        raise NotImplemented() 
-
-    @abstractmethod
-    def _auto_adjust(self, logbook):
-        raise NotImplemented() 
-
+    # Override
     def _validate_config(self, config):
-        """
-        pop_size: population size
-        cx_prob: crossover probability
-        mut_prob: mutation probability
-        max_evals: maximum number of evaluations
-        offspring_size: size of the offspring
-        targets: list of targets (min -1.0 or max 1.0), e.g. [-1.0, -1.0]
-        metrics: list of metrics ('mean_mse', 'mean_mae', 'mse_dtl', 'mae_dtl', 
-            'trainable_vars', 'train_time_dtl', 'mean_train_time'), e.g. ['mean_mse', 'trainable_vars']
-        """
-        if config.pop_size is None or config.pop_size < 1:
+        if config.min_layers is None or config.min_layers < 1:
+            return False
+        if config.max_layers is None or config.max_layers < config.min_layers:
             return False
         if config.max_evals is None or config.max_evals < 1:
             return False
-        if config.offspring_size is None or config.offspring_size < 1:
+        if config.max_neurons is None or config.max_neurons < 1:
             return False
         if config.targets is None or len(config.targets) < 1:
             return False
         if config.metrics is None or len(config.metrics) < 1:
             return False
+        if config.params_neuron is None or config.params_neuron < 1:
+            return False
+        if config.max_look_back is None or config.max_look_back < 1:
+            return False
         return True
 
-    def _evaluate_individual(self, individual):
-        metrics_dict = self._evaluate_solution(individual)
-        return [metrics_dict[x] for x in self.config.metrics]
-
-    def _decode_solution(self, encoded_solution):
-        raise 'Not implemented yet'
-
-    def _init_individual(self, clazz):
-        # range [min,max)
-        raise 'Not implemented yet'
-
-    def _validate_individual(self, individual):
-        raise 'Not implemented yet'
-
+    # Override
     def _run_algorithm(self, stats, hall_of_fame):
-        # First, we initialize the framework
         creator.create("FitnessMulti", base.Fitness, weights=self.config.targets)
         creator.create("Individual", list, fitness=creator.FitnessMulti)
         toolbox = base.Toolbox()
         toolbox.register("individual", self._init_individual, clazz=creator.Individual)
         toolbox.register("population", tools.initRepeat, list, toolbox.individual)
         toolbox.register("evaluate", self._evaluate_individual)
-        toolbox.register("mate", self._mate)
-        toolbox.register("mutate", self._mutate)
-        toolbox.register("select", self._select)
-        toolbox.register("replace", self._replace)
         # Initialize the logger
         logbook = tools.Logbook()
+        evals = 0
         # Initialize population
-        pop = toolbox.population(n=self.config.pop_size)
-        # Evaluate the entire population
-        fitnesses = list(map(toolbox.evaluate, pop))
-        for ind, fit in zip(pop, fitnesses):
-            ind.fitness.values = fit
-        if hall_of_fame is not None:
-            hall_of_fame.update(pop)
-        # Gather the stats
-        record = stats.compile(pop)
-        print(record)
-        evals = self.config.pop_size
-        logbook.record(evaluations=evals, gen=0, **record)
-        g = 1
-        # Begin the evolution
         while evals < self.config.max_evals:
-            print("-- Generation %i --" % g)
-            # Select the next generation individuals
-            if self.config.offspring_size > 1:
-                offspring = toolbox.select(pop, self.config.offspring_size)
-            else:
-                offspring = toolbox.select(pop, 2)
-            # Clone the selected individuals
-            offspring = list(map(toolbox.clone, offspring))
-            # Apply crossover and mutation on the offspring
-            for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                toolbox.mate(child1, child2)
-            if self.config.offspring_size == 1:  
-                offspring = [offspring[0]]
-            for mutant in offspring:
-                toolbox.mutate(mutant)
-            # Evaluate the individuals with an invalid fitness
-            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitnesses = map(toolbox.evaluate, invalid_ind)
-            for ind, fit in zip(invalid_ind, fitnesses):
+            print("-- Evaluations %i --" % evals)
+            pop = toolbox.population(n=1)
+            # Evaluate the entire population
+            fitnesses = list(map(toolbox.evaluate, pop))
+            for ind, fit in zip(pop, fitnesses):
                 ind.fitness.values = fit
-            # Replacement
-            pop[:] = toolbox.replace(pop, offspring)
+            if hall_of_fame is not None:
+                hall_of_fame.update(pop)
             # Gather the stats
             record = stats.compile(pop)
             print(record)
-            evals = evals + self.config.offspring_size
-            if hall_of_fame is not None:
-                hall_of_fame.update(pop)
-            logbook.record(evaluations=evals, gen=g, **record)
-            # The algorithm might adjust the parameters
-            self._auto_adjust(logbook)
-            g += 1
+            evals += 1
+            logbook.record(evaluations=evals, gen=evals, **record)
         return pop, logbook, hall_of_fame
 
-         
+    # Override
+    def _decode_solution(self, encoded_solution):
+        decoded = {}
+        decoded['layers'] = encoded_solution[0]
+        decoded['look_back'] = encoded_solution[1]
+        decoded['weights'] = encoded_solution[2:]
+        return decoded
+
+    def _evaluate_individual(self, individual):
+        metrics_dict = self._evaluate_solution(individual)
+        return [metrics_dict[x] for x in self.config.metrics]
+
+    def _init_individual(self, clazz):
+        solution = list()
+        # First, we define the architecture (how many layers and neurons per layer)
+        ranges = [(1, self.config.max_neurons+1)] * np.random.randint(self.config.min_layers, high=self.config.max_layers+1)
+        layers = [self.layer_in] + [np.random.randint(*p) for p in ranges] + [self.layer_out]
+        solution.append(layers)
+        # Then, the look back
+        solution.append( np.random.randint(1, self.config.max_look_back+1 ) )
+        # Input dim (implicit when initializing first hidden layer) and hidden layers
+        for i in range(len(layers)-2):
+            # Kernel weights
+            solution.append( np.random.uniform(low=-1., high=1., size=(layers[i], layers[i+1]*self.config.params_neuron) ) )
+            # Recurrent weights
+            solution.append( np.random.uniform(low=-1., high=1., size=(layers[i+1], layers[i+1]*self.config.params_neuron) ) )
+            # Bias
+            solution.append( np.random.uniform(low=-1., high=1., size=layers[i+1]*self.config.params_neuron) )
+        # Output dim
+        # Dense weights
+        solution.append( np.random.uniform(low=-1., high=1., size=(layers[-2], layers[-1] ) ) )
+        # Bias
+        solution.append( np.random.uniform(low=-1., high=1., size=layers[-1]) )
+        return clazz(solution) 
+
+#########################################################################################################################
+
 
 #########################################################################################################################
 

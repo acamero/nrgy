@@ -27,7 +27,7 @@ def decode_arch(weights_dict):
         if 'recurrent' in weights_dict[i].keys():
             arch.append( len(weights_dict[i]['recurrent']) )
         elif 'dense'  in weights_dict[i].keys():
-            arch.append( len(weights_dict[i]['dense']) )
+            arch.append( len(weights_dict[i]['dense'][0]) )
     return arch
 
 def get_weights_array(weights_dict):
@@ -48,9 +48,9 @@ def get_weights_array(weights_dict):
 ############################################################################################################
 class RNNBuilder(object):
 
-    def __init__(self, weights_dict, model_file="lstm_model.hdf5"):      
-        self.model = self._build_model( decode_arch(weights_dict) )
-        self.model.set_weights( get_weights_array(weights_dict) )
+    def __init__(self, layers, weights):      
+        self.model = self._build_model( layers )
+        self.model.set_weights( weights )
         #adam = Adam(lr = 5e-5)
         #self.model.compile(loss='mean_squared_error', optimizer=adam)
         #self.model.compile()
@@ -80,7 +80,7 @@ class RNNBuilder(object):
 
     def predict(self, df_X, look_back):        
         len_data = len(df_X)
-        X = np.array( [df_X[i:i+look_back] 
+        X = np.array( [df_X.values[i:i+look_back] 
                     for i in range(len_data - look_back)] ).reshape(-1,look_back, self.input_dim)
         return self.model.predict(X)
 
@@ -117,16 +117,33 @@ if __name__ == '__main__':
     weights[1]['bias'] = np.array([.211,.212,.213,.214,.221,.222,.223,.224], dtype='f')
     weights[2] = {}
     weights[2]['dense'] = np.array([ 
-                               [.511,.312],
-                               [.511,.312]
+                               [.511,.1,.3],
+                               [.511,.1,.3]
                           ], dtype='f')
-    weights[2]['bias'] = np.array([.1,.2], dtype='f')
+    weights[2]['bias'] = np.array([.1,.2,.3], dtype='f')
+    # Simple
+    weights_s = {}
+    weights_s[0] = {}
+    weights_s[0]['kernel'] = np.array([ 
+                               [.1,.1,.1,.1] 
+                           ], dtype='f')
+    weights_s[0]['recurrent'] = np.array([
+                                  [.2,.2,.2,.2]
+                              ], dtype='f')
+    weights_s[0]['bias'] = np.array([.0,.0,.0,.0], dtype='f')
+    weights_s[1] = {}
+    weights_s[1]['dense'] = np.array([ [1.] ], dtype='f')
+    weights_s[1]['bias'] = np.array([.0], dtype='f')
     # Build a RNN based on the weights
-    rnn_handler = RNNBuilder(weights)
+    layers = decode_arch(weights)
+    print(layers)
+    weights_array = get_weights_array(weights)
+    print(weights_array)
+    rnn_handler = RNNBuilder(layers, weights_array)
     # Get an image of the model
     #rnn_handler.model_to_png('models/model.png')
     # Predict the next value of the series
-    X = np.array(np.linspace(0,1,20),dtype='f')        
+    X = np.array(np.linspace(0,1,10),dtype='f')        
     y = rnn_handler.predict( X, look_back = 1)
     print(y)
     
