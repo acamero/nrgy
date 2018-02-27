@@ -30,12 +30,13 @@ os.environ['PYTHONHASHSEED'] = '0'
 #########################################################################################################################
 class BaseOptimizer(ABC):
 
-    def __init__(self, data, config, seed=1234):
+    def __init__(self, data, config, cache, seed=1234):
         if not self._validate_config(config):
             print('The configuration is not valid')
             raise 
         self.data = data
         self.config = config
+        self.cache = cache
         self.layer_in = len(config.x_features)
         self.layer_out = len(config.y_features)
         np.random.seed(seed)
@@ -57,13 +58,25 @@ class BaseOptimizer(ABC):
     def _evaluate_solution(self, encoded_solution):
         decoded = self._decode_solution(encoded_solution)
         print('Evaluate: ' + str(decoded['layers']) + ' ...')
-        rnn_solution = nn.RNNBuilder(decoded['layers'], decoded['weights'])
-        y_predicted = rnn_solution.predict(self.data[self.config.x_features], decoded['look_back'])
-        y_gt = self.data[self.config.y_features].values[decoded['look_back']:,:]
-        mse = ut.mse_loss(y_predicted, y_gt)
-        mae = ut.mae_loss(y_predicted, y_gt)
-        metrics = {'trainable_params':rnn_solution.trainable_params, 'num_hidden_layers':rnn_solution.hidden_layers,
-                    'layers':decoded['layers'], 'mse':mse, 'mae':mae, 'num_hidden_neurons':np.sum(decoded['layers'][1:-1])}
+        model_hash = hash(str(decoded)) 
+        metrics = self.cache.upsert_cache(model_hash, None)
+        if metrics is None:
+            rnn_solution = nn.RNNBuilder(decoded['layers'], decoded['weights'])
+            y_predicted = rnn_solution.predict(self.data[self.config.x_features], decoded['look_back'])
+            y_gt = self.data[self.config.y_features].values[decoded['look_back']:,:]
+            mse = ut.mse_loss(y_predicted, y_gt)
+            mae = ut.mae_loss(y_predicted, y_gt)
+            metrics = { 'trainable_params':rnn_solution.trainable_params,
+                        'num_hidden_layers':rnn_solution.hidden_layers,
+                        'layers':'-'.join(map(str, decoded['layers'])), 
+                        'mse':mse, 
+                        'mae':mae, 
+                        'num_hidden_neurons':int(np.sum(decoded['layers'][1:-1])),
+                        'look_back':decoded['look_back']
+                        }
+            self.cache.upsert_cache(model_hash, metrics)
+        else:
+            print('Metrics load from cache')
         return metrics
 
     def optimize(self, hof_size=1):
@@ -81,8 +94,6 @@ class BaseOptimizer(ABC):
         pop, logbook, hall_of_fame = self._run_algorithm(stats, hall_of_fame)
         return pop, logbook, hall_of_fame
    
-
-
 
 #########################################################################################################################
 
@@ -115,8 +126,11 @@ if __name__ == '__main__':
     reader =config.data_reader_class()
     data = reader.load_data( config.data_folder )
     data = pd.concat([data['train'],data['test']])
+    # Load the cache
+    cache = ut.FitnessCache()
+    cache.load_from_file(config.cache_file) 
     # Select the optimization algorithm
-    optimizer = config.optimizer_class(data, config, seed=FLAGS.seed)
+    optimizer = config.optimizer_class(data, config, cache, seed=FLAGS.seed)
     # And look for an optimal RNN
     pop, logbook, hof = optimizer.optimize(FLAGS.hof)
     log_df = pd.DataFrame(data=logbook)
@@ -125,8 +139,9 @@ if __name__ == '__main__':
         with open(config.results_folder + config.config_name + '-sol.csv','w') as f:
             for sol in hof:
                 f.write(str(sol) + ';' + str(sol.fitness.values) + '\n')
-                print('sol=' + str(sol) + ';fitness=' + str(sol.fitness.values))
+                #print('sol=' + str(sol) + ';fitness=' + str(sol.fitness.values))
         f.close()
     except IOError:
         print('Unable to store the hall of fame')
+    cache.save_to_file(config.cache_file)
 

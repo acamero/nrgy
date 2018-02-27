@@ -41,6 +41,39 @@ class ParkingDFDataReader(DataReader):
         return dfs
 
 
+############################################################################################################
+class FitnessCache(object):
+
+    _cache = {}
+
+    def load_from_file(self, filename):        
+        try:
+            with open(filename, 'r') as f:
+                f_str = f.read()
+                self._cache = json.loads(f_str)
+                print(str(len(self._cache)) + ' entries loaded into the cache memory')
+            f.close()
+        except IOError:
+            print('Unable to load the cache')
+
+    def upsert_cache(self, config, fitness):
+        if fitness:
+            self._cache[str(config)] = fitness
+            return self._cache[str(config)]
+        elif str(config) in self._cache:
+            return self._cache[str(config)]
+        return None
+
+    def save_to_file(self, filename):
+        dj = json.dumps(self._cache)
+        try:
+            with open(filename,'w') as f:
+                f.write(str(dj))
+            f.close()
+            print(str(len(self._cache)) + ' cache entries saved')
+        except IOError:
+            print('Unable to store the cache')
+
 ############################################################################################################     
 class Config(object):
 
@@ -83,20 +116,13 @@ class Config(object):
             print('Unable to load the configuration file')
         # Update the configuration using the data in the file
         for key in json_config:
-            if key == 'optimizer_class' and json_config[key] != '':
+            if (key.endswith("_class") or key.endswith("_func")) and json_config[key] != '':
                 if json_config[key].count('.') > 0:
                     module_name = json_config[key][0:json_config[key].rfind('.')]
                     class_name = json_config[key][json_config[key].rfind('.')+1:]
-                    self.optimizer_class = getattr( __import__(module_name), class_name )
+                    setattr(self, key, getattr( __import__(module_name), class_name ) )
                 else:
-                    self.optimizer_class = locals()[json_config[key]]
-            elif key == 'data_reader_class' and json_config[key] != '':
-                if json_config[key].count('.') > 0:
-                    module_name = json_config[key][0:json_config[key].rfind('.')]
-                    class_name = json_config[key][json_config[key].rfind('.')+1:]
-                    self.data_reader_class = getattr( __import__(module_name), class_name )
-                else:
-                    self.data_reader_class = locals()[json_config[key]]
+                    setattr(self, key, locals()[json_config[key]] )            
             else:
                 setattr(self, key, json_config[key])
 

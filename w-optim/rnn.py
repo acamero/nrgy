@@ -51,11 +51,6 @@ class RNNBuilder(object):
     def __init__(self, layers, weights):      
         self.model = self._build_model( layers )
         self.model.set_weights( weights )
-        #adam = Adam(lr = 5e-5)
-        #self.model.compile(loss='mean_squared_error', optimizer=adam)
-        #self.model.compile()
-        #self.checkpointer = ModelCheckpoint(filepath=model_file, verbose=0, save_best_only=True)
-        #print( self.model.get_weights() )
         self.trainable_params = int(np.sum([K.count_params(p) for p in set(self.model.trainable_weights)]))
 
     def _build_model(self, layers):
@@ -69,13 +64,16 @@ class RNNBuilder(object):
                     LSTM(
                     #SimpleRNN(
                     input_dim=layers[i],
-                    output_dim=layers[i+1], 
+                    output_dim=layers[i+1],
+                    kernel_initializer='zeros', 
+                    recurrent_initializer='zeros',
+                    bias_initializer='zeros',
                     # Uncomment to use last batch state to init next training step.
                     # Specify shuffle=False when calling fit() 
                     #batch_size=batch_size, stateful=True,
                     return_sequences= True if i < len(layers) - 3 else False )
                     )
-        model.add(Dense(layers[-1]))        
+        model.add(Dense(layers[-1], kernel_initializer='zeros', bias_initializer='zeros'))        
         return model
 
     def predict(self, df_X, look_back):        
@@ -137,14 +135,14 @@ if __name__ == '__main__':
     # Build a RNN based on the weights
     layers = decode_arch(weights)
     print(layers)
-    weights_array = get_weights_array(weights)
+    weights_array = get_weights_array(weights_s)
     print(weights_array)
     rnn_handler = RNNBuilder(layers, weights_array)
     # Get an image of the model
     #rnn_handler.model_to_png('models/model.png')
     # Predict the next value of the series
-    X = np.array(np.linspace(0,1,10),dtype='f')        
-    y = rnn_handler.predict( X, look_back = 1)
+    df_X = pd.DataFrame(np.linspace(0,1,10))        
+    y = rnn_handler.predict( df_X, look_back = 1)
     print(y)
     
 
