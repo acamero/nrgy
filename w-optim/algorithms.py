@@ -84,6 +84,7 @@ class RandomSearch(BaseOptimizer):
             fitnesses = list(map(toolbox.evaluate, pop))
             for ind, fit in zip(pop, fitnesses):
                 ind.fitness.values = fit
+                print(ind.fitness)
             if hall_of_fame is not None:
                 hall_of_fame.update(pop)
             # Gather the stats

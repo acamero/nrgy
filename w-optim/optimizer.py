@@ -6,6 +6,7 @@ import util as ut
 import pandas as pd
 import argparse
 from abc import ABC, abstractmethod
+import hashlib
 #@article{DEAP_JMLR2012,
 #    author    = " F\'elix-Antoine Fortin and Fran\c{c}ois-Michel {De Rainville} and Marc-Andr\'e Gardner and Marc Parizeau and Christian Gagn\'e ",
 #    title     = { {DEAP}: Evolutionary Algorithms Made Easy },
@@ -58,7 +59,7 @@ class BaseOptimizer(ABC):
     def _evaluate_solution(self, encoded_solution):
         decoded = self._decode_solution(encoded_solution)
         print('Evaluate: ' + str(decoded['layers']) + ' ...')
-        model_hash = hash(str(decoded)) 
+        model_hash = hashlib.sha224(str(decoded['look_back']).encode('UTF-8') + str(decoded['weights']).encode('UTF-8')).hexdigest()
         metrics = self.cache.upsert_cache(model_hash, None)
         if metrics is None:
             rnn_solution = nn.RNNBuilder(decoded['layers'], decoded['weights'])
@@ -77,6 +78,7 @@ class BaseOptimizer(ABC):
             self.cache.upsert_cache(model_hash, metrics)
         else:
             print('Metrics load from cache')
+        print(metrics)
         return metrics
 
     def optimize(self, hof_size=1):
@@ -90,9 +92,17 @@ class BaseOptimizer(ABC):
         stats.register("std", np.std, axis=0)
         stats.register("min", np.min, axis=0)
         stats.register("max", np.max, axis=0)
-        hall_of_fame = tools.HallOfFame(hof_size)
+        hall_of_fame = tools.HallOfFame(hof_size, similar=self._eq)
         pop, logbook, hall_of_fame = self._run_algorithm(stats, hall_of_fame)
         return pop, logbook, hall_of_fame
+
+    def _eq(self, a, b):
+        eq = True
+        for i in range(len(a.fitness.values)):
+            if a.fitness.values[i] != b.fitness.values[i]:
+                eq = False
+                break
+        return eq
    
 
 #########################################################################################################################
@@ -134,9 +144,9 @@ if __name__ == '__main__':
     # And look for an optimal RNN
     pop, logbook, hof = optimizer.optimize(FLAGS.hof)
     log_df = pd.DataFrame(data=logbook)
-    log_df.to_csv(config.results_folder + config.config_name + '-log.csv', sep=';', encoding='utf-8')    
+    log_df.to_csv(config.results_folder + config.config_name + '-' + str(FLAGS.seed) + '-log.csv', sep=';', encoding='utf-8')    
     try:
-        with open(config.results_folder + config.config_name + '-sol.csv','w') as f:
+        with open(config.results_folder + config.config_name + '-' + str(FLAGS.seed) + '-sol.csv','w') as f:
             for sol in hof:
                 f.write(str(sol) + ';' + str(sol.fitness.values) + '\n')
                 #print('sol=' + str(sol) + ';fitness=' + str(sol.fitness.values))

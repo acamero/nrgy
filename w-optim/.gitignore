@@ -3,4 +3,6 @@ __pycache__
 *.hdf5
 models/
 results/
-
+dist/
+build/
+*.spec
