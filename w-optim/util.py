@@ -74,6 +74,19 @@ class FitnessCache(object):
         except IOError:
             print('Unable to store the cache')
 
+class NoCache(object):
+    def load_from_file(self, filename):
+        pass
+    def upsert_cache(self, config, fitness):
+        return None
+    def save_to_file(self, filename):
+        try:
+            with open(filename,'w') as f:
+                f.write("")
+            f.close()
+        except IOError:
+            print('Unable to store the cache')
+
 ############################################################################################################     
 class Config(object):
 

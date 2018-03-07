@@ -91,34 +91,33 @@ class RNNBuilder(object):
 ############################################################################################################
 
 if __name__ == '__main__':
-    weights = {}
-    weights[0] = {}
-    weights[0]['kernel'] = np.array([ 
-                               [.1111,.1112,.1113,.1114,.1121,.1122,.1123,.1124,.1131,.1132,.1133,.1134] 
-                           ], dtype='f')
-    weights[0]['recurrent'] = np.array([
-                                  [.2111,.2112,.2113,.2114,.2121,.2122,.2123,.2124,.2131,.2132,.2133,.2134],
-                                  [.2211,.2212,.2213,.2214,.2221,.2222,.2223,.2224,.2231,.2232,.2233,.2234],
-                                  [.2311,.2312,.2313,.2314,.2321,.2322,.2323,.2224,.2331,.2332,.2333,.2334]
-                              ], dtype='f')
-    weights[0]['bias'] = np.array([.211,.212,.213,.214,.221,.222,.223,.224,.231,.232,.233,.234], dtype='f')
-    weights[1] = {}
-    weights[1]['kernel'] = np.array([ 
-                               [.1111,.1112,.1113,.1114,.1121,.1122,.1123,.1124],
-                               [.2111,.2112,.2113,.2114,.2121,.2122,.2123,.2124],
-                               [.3111,.3112,.3113,.3114,.3121,.3122,.3123,.3124],
-                           ], dtype='f')
-    weights[1]['recurrent'] = np.array([
-                                  [.2111,.2112,.2113,.2114,.2121,.2122,.2123,.2124],
-                                  [.2211,.2212,.2213,.2214,.2221,.2222,.2223,.2224],                                  
-                              ], dtype='f')
-    weights[1]['bias'] = np.array([.211,.212,.213,.214,.221,.222,.223,.224], dtype='f')
-    weights[2] = {}
-    weights[2]['dense'] = np.array([ 
-                               [.511,.1,.3],
-                               [.511,.1,.3]
-                          ], dtype='f')
-    weights[2]['bias'] = np.array([.1,.2,.3], dtype='f')
+    simple = False
+    look_back = 1
+    layer_in = 30
+    layer_out = 28
+    df_X = pd.DataFrame(np.linspace(0,1,100*layer_in).reshape(100,layer_in))
+    # Random net
+    min_neurons = 62
+    max_neurons = 62
+    min_layers = 8
+    max_layers = 8    
+    params_neuron = 4
+    ranges = [(min_neurons, max_neurons+1)] * np.random.randint(min_layers, high=max_layers+1)
+    layers = [layer_in] + [np.random.randint(*p) for p in ranges] + [layer_out]
+    weights = list()
+    for i in range(len(layers)-2):
+        # Kernel weights
+        weights.append( np.random.uniform(low=-1.0, high=1.0, size=(layers[i], layers[i+1]*params_neuron) ) )
+        # Recurrent weights
+        weights.append( np.random.uniform(low=-1.0, high=1.0, size=(layers[i+1], layers[i+1]*params_neuron) ) )
+        # Bias
+        weights.append( np.random.uniform(low=-1.0, high=1.0, size=layers[i+1]*params_neuron) )
+    # Output dim
+    # Dense weights
+    weights.append( np.random.uniform(low=-1.0, high=1.0, size=(layers[-2], layers[-1] ) ) )
+    # Bias
+    weights.append( np.random.uniform(low=-1.0, high=1.0, size=layers[-1]) )
+    
     # Simple
     weights_s = {}
     weights_s[0] = {}
@@ -133,16 +132,16 @@ if __name__ == '__main__':
     weights_s[1]['dense'] = np.array([ [1.] ], dtype='f')
     weights_s[1]['bias'] = np.array([.0], dtype='f')
     # Build a RNN based on the weights
-    layers = decode_arch(weights)
+    if simple:
+        layers_s = decode_arch(weights_s)    
+        weights = get_weights_array(weights_s)    
     print(layers)
-    weights_array = get_weights_array(weights_s)
-    print(weights_array)
-    rnn_handler = RNNBuilder(layers, weights_array)
+    #print(weights)
+    rnn_handler = RNNBuilder(layers, weights)
     # Get an image of the model
     #rnn_handler.model_to_png('models/model.png')
     # Predict the next value of the series
-    df_X = pd.DataFrame(np.linspace(0,1,10))        
-    y = rnn_handler.predict( df_X, look_back = 1)
+    y = rnn_handler.predict( df_X, look_back = look_back)
     print(y)
     
 

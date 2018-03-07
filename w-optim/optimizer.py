@@ -67,14 +67,15 @@ class BaseOptimizer(ABC):
             y_gt = self.data[self.config.y_features].values[decoded['look_back']:,:]
             mse = ut.mse_loss(y_predicted, y_gt)
             mae = ut.mae_loss(y_predicted, y_gt)
-            metrics = { 'trainable_params':rnn_solution.trainable_params,
-                        'num_hidden_layers':rnn_solution.hidden_layers,
+            metrics = { 'trainable_params':int(rnn_solution.trainable_params),
+                        'num_hidden_layers':int(rnn_solution.hidden_layers),
                         'layers':'-'.join(map(str, decoded['layers'])), 
                         'mse':mse, 
                         'mae':mae, 
                         'num_hidden_neurons':int(np.sum(decoded['layers'][1:-1])),
-                        'look_back':decoded['look_back']
+                        'look_back':int(decoded['look_back'])
                         }
+            del rnn_solution
             self.cache.upsert_cache(model_hash, metrics)
         else:
             print('Metrics load from cache')
@@ -126,7 +127,11 @@ if __name__ == '__main__':
           type=str,
           default='config.json',
           help='Experiment configuration file path (json format).'
-    )    
+    )   
+    parser.add_argument(
+          '--nocache', 
+          action='store_true'
+    ) 
     FLAGS, unparsed = parser.parse_known_args()
     config = ut.Config()
     # Load the configuration
@@ -137,7 +142,10 @@ if __name__ == '__main__':
     data = reader.load_data( config.data_folder )
     data = pd.concat([data['train'],data['test']])
     # Load the cache
-    cache = ut.FitnessCache()
+    if not FLAGS.nocache:
+        cache = ut.FitnessCache()
+    else:
+        cache = ut.NoCache()
     cache.load_from_file(config.cache_file) 
     # Select the optimization algorithm
     optimizer = config.optimizer_class(data, config, cache, seed=FLAGS.seed)
@@ -146,6 +154,7 @@ if __name__ == '__main__':
     log_df = pd.DataFrame(data=logbook)
     log_df.to_csv(config.results_folder + config.config_name + '-' + str(FLAGS.seed) + '-log.csv', sep=';', encoding='utf-8')    
     try:
+        np.set_printoptions(threshold=np.inf)
         with open(config.results_folder + config.config_name + '-' + str(FLAGS.seed) + '-sol.csv','w') as f:
             for sol in hof:
                 f.write(str(sol) + ';' + str(sol.fitness.values) + '\n')
